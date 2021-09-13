@@ -54,7 +54,12 @@ func Write(w io.Writer, msg Message) (n int, err error) {
 }
 
 func Read(r io.Reader, msg Message) (n int, err error) {
-	size, err := binary.ReadUvarint(&byteCounter{NewByteReader(r), &n})
+	br, ok := r.(io.ByteReader)
+	if !ok {
+		br = NewByteReader(r)
+	}
+
+	size, err := binary.ReadUvarint(&byteCounter{br, &n})
 	if err != nil {
 		return
 	}
