@@ -2,6 +2,7 @@ package messenger
 
 import (
 	"context"
+	"math/rand"
 	"testing"
 
 	logging "github.com/ipfs/go-log/v2"
@@ -10,10 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/celestiaorg/go-libp2p-messenger/serde/serdetest"
+	"github.com/celestiaorg/go-libp2p-messenger/serde"
 )
 
-func TestMessengerSimpleSend(t *testing.T) {
+func TestMessengerSimpleSendCustomType(t *testing.T) {
 	logging.SetLogLevel("messenger", "debug")
 
 	const tproto protocol.ID = "/test"
@@ -24,40 +25,46 @@ func TestMessengerSimpleSend(t *testing.T) {
 	mnet, err := mocknet.FullMeshConnected(ctx, 2)
 	require.NoError(t, err)
 
-	min := NewMessenger(mnet.Hosts()[0], tproto)
-	mout := NewMessenger(mnet.Hosts()[1], tproto)
-
-	msgin := serdetest.RandFakeMessage(256)
-	min.Send(ctx, msgin, mnet.Peers()[1])
-
-	msgout := <-mout.Inbound()
-	assert.EqualValues(t, msgin, msgout.Message)
-
-	err = min.Close()
+	min, err := NewMessenger(mnet.Hosts()[0], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
 	require.NoError(t, err)
-	err = mout.Close()
+
+	mout, err := NewMessenger(mnet.Hosts()[1], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
 	require.NoError(t, err)
+
+	msgin := randPlainMessage(256)
+	done := min.Send(ctx, msgin, mnet.Peers()[1])
+	require.NoError(t, <-done)
+
+	msgout, from, err := mout.Receive(ctx)
+	require.NoError(t, err)
+	assert.EqualValues(t, msgin, msgout)
+	assert.Equal(t, mnet.Hosts()[0].ID(), from)
 }
+//
+// func TestMessengerBroadcast(t *testing.T) {
+// 	const tproto protocol.ID = "/test"
+// 	const netSize = 5
+//
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	defer cancel()
+//
+// 	mnet, err := mocknet.FullMeshConnected(ctx, netSize)
+// 	require.NoError(t, err)
+//
+// 	ms := make([]*Messenger, netSize)
+// 	for i, h := range mnet.Hosts() {
+// 		ms[i], err = NewMessenger(h, WithProtocols(tproto))
+// 		require.NoError(t, err)
+// 	}
+//
+// 	for _, m := range ms {
+// 		m.Broadcast(ctx, randPlainMessage(100))
+//
+// 	}
+// }
 
-func TestMessenger(t *testing.T) {
-	const tproto protocol.ID = "/test"
-	const netSize = 3
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	mnet, err := mocknet.FullMeshConnected(ctx, netSize)
-	require.NoError(t, err)
-
-	ms := make([]*Messenger, netSize)
-	for i, h := range mnet.Hosts() {
-		ms[i] = NewMessenger(h, tproto)
-	}
-
-
-
-	for _, m := range ms {
-		err = m.Close()
-		require.NoError(t, err)
-	}
+func randPlainMessage(size int) *serde.PlainMessage {
+	msg := &serde.PlainMessage{Data: make([]byte, size)}
+	rand.Read(msg.Data)
+	return msg
 }

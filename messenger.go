@@ -1,247 +1,146 @@
+// TODO: Docs
+// TODO: Moooar Tests
+
+// TODO: Required features
+//  * Broadcast(test)
+//  * Peer Connected/Disconnected events
+
+// TODO: Others
+//  * Reasonable channel sizes and options for them
+
+// TODO: API
+//	 * Alternative API where user passes handlers instead of relying on channels
+//   * Built-in Request/Response API
+//   * Rework Close to wait till all messages are processed
+
+// TODO: Metrics
+//  * Collect Read/Write bandwidth usage
 package messenger
 
 import (
-	"bufio"
 	"context"
-	"fmt"
-	"io"
 	"reflect"
-	"sync/atomic"
-
-	"github.com/celestiaorg/go-libp2p-messenger/serde"
-	"github.com/celestiaorg/go-libp2p-messenger/serde/serdetest"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/host"
 	inet "github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
+
+	"github.com/celestiaorg/go-libp2p-messenger/serde"
 )
 
-var log = logging.Logger("messenger")
-
-// TODO: Consensus handle multiple channels
-//  * Multiple messengers per consensus
-//  * Multiple streams per messenger
-
-// TODO: MsgOut should be reworked to have idependent loops
-// TODO: Consider moving to a more framework like design
-// TODO: Broadcast
-// TODO: Stream lifecycle
-// TODO: Messenger lifecycle
-// TODO: Peer Connected/Disconnected
-// TODO: Handle ID
-// TODO: Channel sizes
-// TODO: Metrics
-
-type Message struct {
-	serde.Message
-
-	ID uint64
-	From, To peer.ID
-	Broadcast bool
-	Done chan error
-}
+var log = logging.Logger("msnger")
 
 type Messenger struct {
-	seqno uint64
-
 	pids []protocol.ID
 	host host.Host
 
-	streamsOut   map[peer.ID]inet.Stream
-	streamsIn    map[peer.ID]inet.Stream
-	newStreamsIn chan inet.Stream
-	deadStreamsIn chan peer.ID
-
-	inbound chan *Message
-	outbound chan *Message
-
 	msgTp reflect.Type
 
-	ctx context.Context
+	inbound       chan *msgWrap
+	streamsIn     map[peer.ID]inet.Stream
+	newStreamsIn  chan inet.Stream
+	deadStreamsIn chan peer.ID
+
+	outbound       chan *msgWrap
+	streamsOut     map[peer.ID]inet.Stream
+	newStreamsOut  chan inet.Stream
+	deadStreamsOut chan peer.ID
+	peersOut       map[peer.ID]chan *msgWrap
+
+	ctx    context.Context
 	cancel context.CancelFunc
 }
 
-func NewMessenger(host host.Host, pids ...protocol.ID) *Messenger {
+func NewMessenger(host host.Host, opts ...Option) (*Messenger, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Messenger{
-		pids:         pids,
-		host:         host,
-		streamsIn:    make(map[peer.ID]inet.Stream),
-		streamsOut:   make(map[peer.ID]inet.Stream),
-		newStreamsIn: make(chan inet.Stream, 32),
-		inbound:      make(chan *Message),
-		outbound:     make(chan *Message),
-		msgTp:        reflect.TypeOf(serdetest.FakeMessage{}),
-		ctx:          ctx,
-		cancel:       cancel,
+		host:           host,
+		msgTp:          reflect.TypeOf(serde.PlainMessage{}),
+		inbound:        make(chan *msgWrap, 32),
+		streamsIn:      make(map[peer.ID]inet.Stream),
+		newStreamsIn:   make(chan inet.Stream, 32),
+		deadStreamsIn:  make(chan peer.ID, 32),
+		outbound:       make(chan *msgWrap, 32),
+		streamsOut:     make(map[peer.ID]inet.Stream),
+		newStreamsOut:  make(chan inet.Stream, 32),
+		deadStreamsOut: make(chan peer.ID, 32),
+		peersOut:       make(map[peer.ID]chan *msgWrap),
+		ctx:            ctx,
+		cancel:         cancel,
 	}
-	for _, pid := range pids {
-		host.SetStreamHandler(pid, func(s inet.Stream) {
-			select {
-			case m.newStreamsIn <- s:
-			case <-m.ctx.Done():
-				return
-			}
-		})
+	err := m.options(opts...)
+	if err != nil {
+		return nil, err
 	}
-	go m.outboundLoop1()
-	go m.handleStreams()
-	return m
+
+	go m.processOut()
+	go m.processIn()
+	m.init()
+	return m, nil
 }
 
-func (m *Messenger) Send(ctx context.Context, out serde.Message, to peer.ID) {
-	done := make(chan error, 1)
-	msg := &Message{
+func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) <-chan error {
+	msg := &msgWrap{
 		Message: out,
-		ID: atomic.AddUint64(&m.seqno, 1),
-		From: m.host.ID(),
-		To: to,
-		Done: done,
+		bcast:   true,
+		done:    make(chan error, 1),
 	}
-	select {
-	case m.outbound <- msg:
-	case <-ctx.Done():
-		done <- ctx.Err()
-	case <-m.ctx.Done():
-		done <- ctx.Err()
-	}
+	m.send(ctx, msg)
+	return msg.done
 }
 
-func (m *Messenger) Receive(ctx context.Context) (*Message, error) {
+func (m *Messenger) Send(ctx context.Context, out serde.Message, to peer.ID) <-chan error {
+	msg := &msgWrap{
+		Message: out,
+		to:      to,
+		done:    make(chan error, 1),
+	}
+	m.send(ctx, msg)
+	return msg.done
+}
+
+func (m *Messenger) Receive(ctx context.Context) (serde.Message, peer.ID, error) {
 	select {
 	case msg := <-m.inbound:
-		return msg, nil
+		return msg.Message, msg.from, nil
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, "", ctx.Err()
 	case <-m.ctx.Done():
-		return nil, ctx.Err()
+		return nil, "", m.ctx.Err()
 	}
-}
-
-func (m *Messenger) Inbound() <-chan *Message {
-	return m.inbound
-}
-
-func (m *Messenger) Outbound() chan<- *Message {
-	return m.outbound
 }
 
 func (m *Messenger) Close() error {
 	m.cancel()
+	m.deinit()
 	return nil
 }
 
-func (m *Messenger) outboundLoop1() {
-	for {
-		select {
-		case msg := <-m.outbound:
-			log.Debugw("msgOut", "id", msg.ID, "to", msg.To.ShortString())
-			msg.Done <- m.msgOut(msg)
-			close(msg.Done)
-		case <-m.ctx.Done():
-			return
-		}
+func (m *Messenger) send(ctx context.Context, msg *msgWrap) {
+	select {
+	case m.outbound <- msg:
+	case <-ctx.Done():
+		msg.Done(m.ctx.Err())
+	case <-m.ctx.Done():
+		msg.Done(m.ctx.Err())
 	}
 }
 
-func (m *Messenger) inboundLoop(s inet.Stream) {
-	r := bufio.NewReader(s)
-	for {
-		msg, err := m.readMsg(r)
-		if err != nil {
-			if err == io.EOF {
-				return
-			}
-			log.Error(err)
-			s.Reset()
-			return
-		}
+type msgWrap struct {
+	serde.Message
 
-		select {
-		case m.inbound <- msg:
-		case <-m.ctx.Done():
-			s.Reset()
-			return
-		default:
-			log.Warnf("Dropped msg from %s - slow reader.", msg.From.ShortString())
-		}
-	}
+	bcast    bool
+	from, to peer.ID
+	done     chan error
 }
 
-func (m *Messenger) handleStreams() {
-	for {
-		select {
-		case s := <-m.newStreamsIn:
-			peer := s.Conn().RemotePeer()
-			log.Debugw("new stream from", "peer", peer.ShortString())
-			_, ok := m.streamsIn[peer]
-			if ok {
-				// duplicate? maybe a retry
-				log.Warnf("stream duplicate for peer %s", peer.ShortString())
-				// the last one is the valid, so proceed
-			}
-
-			go m.inboundLoop(s)
-			m.streamsIn[peer] = s
-		case p := <-m.deadStreamsIn:
-			delete(m.streamsIn, p)
-		case <-m.ctx.Done():
-			return
-		}
-	}
-}
-
-func (m *Messenger) msgOut(msg *Message) error {
-	s, err := m.streamOut(msg.To)
+func (msg *msgWrap) Done(err error) {
 	if err != nil {
-		return err
+		msg.done <- err
 	}
-
-	// TODO:
-	//  * Metrics
-	//  * Reties
-	log.Debugw("writeMsg", "id", msg.ID, "to", msg.To.ShortString())
-	err = m.writeMsg(s, msg)
-	if err != nil {
-		s.Reset()
-		return err
+	if !msg.bcast {
+		close(msg.done)
 	}
-	return nil
-}
-
-func (m *Messenger) streamOut(p peer.ID) (inet.Stream, error) {
-	s, ok := m.streamsOut[p]
-	if ok {
-		return s, nil
-	}
-
-	s, err := m.host.NewStream(m.ctx, p, m.pids...)
-	if err != nil {
-		return nil, err // TODO: Meaningful error
-	}
-
-	log.Debugw("new stream to", "peer", p.ShortString())
-	m.streamsOut[p] = s
-	return s, nil
-}
-
-// TODO: Collect Read/Write bandwidth usage?
-
-func (m *Messenger) readMsg(r io.Reader) (*Message, error) {
-	msg := &Message{Message: reflect.New(m.msgTp).Interface().(serde.Message)}
-	_, err := serde.Read(r, msg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read message from peer %s: %w", msg.From.ShortString(), err)
-	}
-	return msg, nil
-}
-
-func (m *Messenger) writeMsg(w io.Writer, msg *Message) error {
-	_, err := serde.Write(w, msg)
-	if err != nil {
-		return fmt.Errorf("failed to write message to peer %s: %s", msg.To.ShortString(), err)
-	}
-	return nil
 }
