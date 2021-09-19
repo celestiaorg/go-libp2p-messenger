@@ -6,19 +6,17 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/celestiaorg/go-libp2p-messenger/serde/serdetest"
 )
 
 func TestMarshalUnmarshal(t *testing.T) {
-	in := &serdetest.FakeMessage{Data: []byte("test")}
+	in := &PlainMessage{Data: []byte("test")}
 	buf := make([]byte, 100)
 
 	n, err := Marshal(in, buf)
 	require.Nil(t, err)
 	assert.Greater(t, n, in.Size())
 
-	out := &serdetest.FakeMessage{}
+	out := &PlainMessage{}
 	nn, err := Unmarshal(out, buf)
 	require.Nil(t, err)
 	assert.Equal(t, n, nn)
@@ -27,7 +25,7 @@ func TestMarshalUnmarshal(t *testing.T) {
 }
 
 func TestWriteRead(t *testing.T) {
-	in := &serdetest.FakeMessage{Data: []byte("test")}
+	in := &PlainMessage{Data: []byte("test")}
 	rw := &testRW{}
 
 	n, err := Write(rw, in)
@@ -36,7 +34,7 @@ func TestWriteRead(t *testing.T) {
 	assert.Equal(t, n, rw.w)
 	assert.NotEqual(t, n, in.Size())
 
-	out := &serdetest.FakeMessage{}
+	out := &PlainMessage{}
 	nn, err := Read(rw, out)
 	require.Nil(t, err)
 	assert.NotZero(t, nn)
