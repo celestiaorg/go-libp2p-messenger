@@ -3,12 +3,14 @@
 
 // TODO: Required features
 //  * Broadcast(test)
-//  * Peer Connected/Disconnected events
+//  * Peer Connected/Disconnected events(test)
+//  * Stream per Message type
 
 // TODO: Others
 //  * Reasonable channel sizes and options for them
 
 // TODO: API
+//   * Events API is bad, the point below should fix it
 //	 * Alternative API where user passes handlers instead of relying on channels
 //   * Built-in Request/Response API
 //   * Rework Close to wait till all messages are processed
@@ -30,7 +32,7 @@ import (
 	"github.com/celestiaorg/go-libp2p-messenger/serde"
 )
 
-var log = logging.Logger("msnger")
+var log = logging.Logger("messenger")
 
 type Messenger struct {
 	pids []protocol.ID
@@ -48,6 +50,8 @@ type Messenger struct {
 	newStreamsOut  chan inet.Stream
 	deadStreamsOut chan peer.ID
 	peersOut       map[peer.ID]chan *msgWrap
+
+	events chan PeerEvent
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -67,6 +71,7 @@ func NewMessenger(host host.Host, opts ...Option) (*Messenger, error) {
 		newStreamsOut:  make(chan inet.Stream, 32),
 		deadStreamsOut: make(chan peer.ID, 32),
 		peersOut:       make(map[peer.ID]chan *msgWrap),
+		events:         make(chan PeerEvent, 32),
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -110,6 +115,15 @@ func (m *Messenger) Receive(ctx context.Context) (serde.Message, peer.ID, error)
 	case <-m.ctx.Done():
 		return nil, "", m.ctx.Err()
 	}
+}
+
+type PeerEvent struct {
+	ID    peer.ID
+	State inet.Connectedness // Connected or NotConnected only
+}
+
+func (m *Messenger) Events() <-chan PeerEvent {
+	return m.events
 }
 
 func (m *Messenger) Close() error {

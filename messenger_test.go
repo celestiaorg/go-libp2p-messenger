@@ -40,6 +40,7 @@ func TestMessengerSimpleSendCustomType(t *testing.T) {
 	assert.EqualValues(t, msgin, msgout)
 	assert.Equal(t, mnet.Hosts()[0].ID(), from)
 }
+
 //
 // func TestMessengerBroadcast(t *testing.T) {
 // 	const tproto protocol.ID = "/test"

@@ -61,6 +61,12 @@ func (m *Messenger) processOut() {
 			if ok {
 				// duplicate? overwrite with the recent one
 				log.Warnw("duplicate stream", "to", p.ShortString())
+			} else {
+				select {
+				case m.events <- PeerEvent{ID: p, State: inet.Connected}:
+				default:
+					log.Warnf("event dropped(Slow Events reader)")
+				}
 			}
 
 			out, ok := m.peersOut[p]
@@ -71,13 +77,18 @@ func (m *Messenger) processOut() {
 
 			go m.msgsOut(s, out)
 			m.streamsOut[p] = s
-
 		case p := <-m.deadStreamsOut:
 			// TODO: BUG - In case of stream duplicate it deletes a newest valid stream
 			delete(m.streamsOut, p)
 			// we still might be connected and if so respawn the outbound stream
 			if m.host.Network().Connectedness(p) == inet.Connected {
 				go m.streamOut(p)
+			} else {
+				select {
+				case m.events <- PeerEvent{ID: p, State: inet.NotConnected}:
+				default:
+					log.Warnf("event dropped(Slow Events reader)")
+				}
 			}
 
 			// TODO: This is the place where we could also cleanup outbound chan,
@@ -120,7 +131,7 @@ func (m *Messenger) msgsOut(s inet.Stream, out <-chan *msgWrap) {
 			_, err := serde.Write(s, msg)
 			msg.Done(err)
 			if err != nil {
-				log.Errorw("writing message", "to",  msg.to.ShortString(), "err", err)
+				log.Errorw("writing message", "to", msg.to.ShortString(), "err", err)
 				s.Reset()
 				return
 			}

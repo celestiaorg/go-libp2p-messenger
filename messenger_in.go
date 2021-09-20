@@ -52,7 +52,7 @@ func (m *Messenger) msgsIn(s inet.Stream) {
 	for {
 		msg = &msgWrap{
 			Message: reflect.New(m.msgTp).Interface().(serde.Message),
-			from: from,
+			from:    from,
 		}
 		_, err := serde.Read(r, msg.Message)
 		if err != nil {
