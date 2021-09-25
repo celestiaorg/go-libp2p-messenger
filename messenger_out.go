@@ -1,4 +1,4 @@
-package messenger
+package msngr
 
 import (
 	inet "github.com/libp2p/go-libp2p-core/network"

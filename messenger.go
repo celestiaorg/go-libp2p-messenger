@@ -5,6 +5,7 @@
 //  * Broadcast(test)
 //  * Peer Connected/Disconnected events(test)
 //  * Stream per Message type
+//  * Msg size control - split or error if too big
 
 // TODO: Others
 //  * Reasonable channel sizes and options for them
@@ -17,7 +18,7 @@
 
 // TODO: Metrics
 //  * Collect Read/Write bandwidth usage
-package messenger
+package msngr
 
 import (
 	"context"
@@ -57,7 +58,7 @@ type Messenger struct {
 	cancel context.CancelFunc
 }
 
-func NewMessenger(host host.Host, opts ...Option) (*Messenger, error) {
+func New(host host.Host, opts ...Option) (*Messenger, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Messenger{
 		host:           host,

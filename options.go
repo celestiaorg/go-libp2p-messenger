@@ -1,4 +1,4 @@
-package messenger
+package msngr
 
 import (
 	"fmt"

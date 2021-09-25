@@ -1,4 +1,4 @@
-package messenger
+package msngr
 
 import (
 	"context"
@@ -25,10 +25,10 @@ func TestMessengerSimpleSendCustomType(t *testing.T) {
 	mnet, err := mocknet.FullMeshConnected(ctx, 2)
 	require.NoError(t, err)
 
-	min, err := NewMessenger(mnet.Hosts()[0], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	min, err := New(mnet.Hosts()[0], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
 	require.NoError(t, err)
 
-	mout, err := NewMessenger(mnet.Hosts()[1], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	mout, err := New(mnet.Hosts()[1], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
 	require.NoError(t, err)
 
 	msgin := randPlainMessage(256)
@@ -54,7 +54,7 @@ func TestMessengerSimpleSendCustomType(t *testing.T) {
 //
 // 	ms := make([]*Messenger, netSize)
 // 	for i, h := range mnet.Hosts() {
-// 		ms[i], err = NewMessenger(h, WithProtocols(tproto))
+// 		ms[i], err = New(h, WithProtocols(tproto))
 // 		require.NoError(t, err)
 // 	}
 //
