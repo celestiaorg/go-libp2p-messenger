@@ -4,7 +4,6 @@
 //  * Make close to block until all messages are processed
 //  * Stream per Message type
 
-
 // TODO: API
 //   * Events API is bad, the point below should fix it
 //	 * Alternative API where user passes handlers instead of relying on channels
