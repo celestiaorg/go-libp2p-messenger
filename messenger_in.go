@@ -20,23 +20,30 @@ func (m *Messenger) streamIn(s inet.Stream) {
 }
 
 func (m *Messenger) processIn() {
+	defer func() {
+		for p := range m.streamsIn {
+			delete(m.streamsIn, p)
+		}
+	}()
 	for {
 		select {
 		case s := <-m.newStreamsIn:
 			p := s.Conn().RemotePeer()
 			log.Debugw("new stream", "from", p.ShortString())
 
-			_, ok := m.streamsIn[p]
-			if ok {
+			ss, ok := m.streamsIn[p]
+			if !ok {
+				ss = make(map[inet.Stream]struct{})
+				m.streamsIn[p] = ss
+			} else if len(ss) != 0 {
 				// duplicate? overwrite with the recent one
 				log.Warnw("duplicate stream", "from", p.ShortString())
 			}
 
 			go m.msgsIn(s)
-			m.streamsIn[p] = s
-		case p := <-m.deadStreamsIn:
-			// TODO: In case of stream duplicate this will delete a newest valid stream
-			delete(m.streamsIn, p)
+			ss[s] = struct{}{}
+		case s := <-m.deadStreamsIn:
+			delete(m.streamsIn[s.Conn().RemotePeer()], s)
 		case <-m.ctx.Done():
 			return
 		}
@@ -57,7 +64,7 @@ func (m *Messenger) msgsIn(s inet.Stream) {
 		_, err := serde.Read(r, msg.Message)
 		if err != nil {
 			select {
-			case m.deadStreamsIn <- from:
+			case m.deadStreamsIn <- s:
 			case <-m.ctx.Done():
 				return
 			}

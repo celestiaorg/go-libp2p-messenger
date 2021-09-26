@@ -1,20 +1,14 @@
 // TODO: Docs
-// TODO: Moooar Tests
 
 // TODO: Required features
-//  * Broadcast(test)
-//  * Peer Connected/Disconnected events(test)
+//  * Make close to block until all messages are processed
 //  * Stream per Message type
-//  * Msg size control - split or error if too big
 
-// TODO: Others
-//  * Reasonable channel sizes and options for them
 
 // TODO: API
 //   * Events API is bad, the point below should fix it
 //	 * Alternative API where user passes handlers instead of relying on channels
 //   * Built-in Request/Response API
-//   * Rework Close to wait till all messages are processed
 
 // TODO: Metrics
 //  * Collect Read/Write bandwidth usage
@@ -33,7 +27,7 @@ import (
 	"github.com/celestiaorg/go-libp2p-messenger/serde"
 )
 
-var log = logging.Logger("messenger")
+var log = logging.Logger("msngr")
 
 type Messenger struct {
 	pids []protocol.ID
@@ -42,14 +36,14 @@ type Messenger struct {
 	msgTp reflect.Type
 
 	inbound       chan *msgWrap
-	streamsIn     map[peer.ID]inet.Stream
+	streamsIn     map[peer.ID]map[inet.Stream]struct{}
 	newStreamsIn  chan inet.Stream
-	deadStreamsIn chan peer.ID
+	deadStreamsIn chan inet.Stream
 
 	outbound       chan *msgWrap
-	streamsOut     map[peer.ID]inet.Stream
+	streamsOut     map[peer.ID]map[inet.Stream]struct{}
 	newStreamsOut  chan inet.Stream
-	deadStreamsOut chan peer.ID
+	deadStreamsOut chan inet.Stream
 	peersOut       map[peer.ID]chan *msgWrap
 
 	events chan PeerEvent
@@ -64,15 +58,15 @@ func New(host host.Host, opts ...Option) (*Messenger, error) {
 		host:           host,
 		msgTp:          reflect.TypeOf(serde.PlainMessage{}),
 		inbound:        make(chan *msgWrap, 32),
-		streamsIn:      make(map[peer.ID]inet.Stream),
-		newStreamsIn:   make(chan inet.Stream, 32),
-		deadStreamsIn:  make(chan peer.ID, 32),
+		streamsIn:      make(map[peer.ID]map[inet.Stream]struct{}),
+		newStreamsIn:   make(chan inet.Stream, 4),
+		deadStreamsIn:  make(chan inet.Stream, 2),
 		outbound:       make(chan *msgWrap, 32),
-		streamsOut:     make(map[peer.ID]inet.Stream),
-		newStreamsOut:  make(chan inet.Stream, 32),
-		deadStreamsOut: make(chan peer.ID, 32),
+		streamsOut:     make(map[peer.ID]map[inet.Stream]struct{}),
+		newStreamsOut:  make(chan inet.Stream, 4),
+		deadStreamsOut: make(chan inet.Stream, 2),
 		peersOut:       make(map[peer.ID]chan *msgWrap),
-		events:         make(chan PeerEvent, 32),
+		events:         make(chan PeerEvent, 8),
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -85,6 +79,10 @@ func New(host host.Host, opts ...Option) (*Messenger, error) {
 	go m.processIn()
 	m.init()
 	return m, nil
+}
+
+func (m *Messenger) Host() host.Host {
+	return m.host
 }
 
 func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) <-chan error {
@@ -123,6 +121,8 @@ type PeerEvent struct {
 	State inet.Connectedness // Connected or NotConnected only
 }
 
+// If messenger is started over Host with existing connections,
+// for every existing peer there will be an event.
 func (m *Messenger) Events() <-chan PeerEvent {
 	return m.events
 }
