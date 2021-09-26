@@ -1,6 +1,8 @@
 package msngr
 
 import (
+	"context"
+
 	inet "github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 
@@ -27,6 +29,9 @@ func (m *Messenger) processOut() {
 		close(m.events)
 		for p := range m.streamsOut {
 			delete(m.streamsOut, p)
+		}
+		for p := range m.peersOut {
+			delete(m.peersOut, p)
 		}
 	}()
 
@@ -74,14 +79,17 @@ func (m *Messenger) processOut() {
 
 			ss, ok := m.streamsOut[p]
 			if !ok {
-				ss = make(map[inet.Stream]struct{})
+				ss = make(map[inet.Stream]context.CancelFunc)
 				m.streamsOut[p] = ss
 			}
 
 			if len(ss) == 0 {
 				fire(PeerEvent{ID: p, State: inet.Connected})
 			} else {
-				// duplicate? we use the recent stream
+				// duplicate? we use the recent stream only
+				for _, cancel := range ss {
+					cancel()
+				}
 				log.Warnw("duplicate stream", "to", p.ShortString())
 			}
 
@@ -91,8 +99,9 @@ func (m *Messenger) processOut() {
 				m.peersOut[p] = out
 			}
 
-			go m.msgsOut(s, out)
-			ss[s] = struct{}{}
+			ctx, cancel := context.WithCancel(m.ctx)
+			go m.msgsOut(ctx, s, out)
+			ss[s] = cancel
 		case s := <-m.deadStreamsOut:
 			p := s.Conn().RemotePeer()
 
@@ -119,7 +128,7 @@ func (m *Messenger) processOut() {
 	}
 }
 
-func (m *Messenger) msgsOut(s inet.Stream, out <-chan *msgWrap) {
+func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan *msgWrap) {
 	closed := make(chan struct{})
 	go func() {
 		// a valid trick to check if stream is closed/reset
@@ -150,7 +159,7 @@ func (m *Messenger) msgsOut(s inet.Stream, out <-chan *msgWrap) {
 			}
 		case <-closed:
 			return
-		case <-m.ctx.Done():
+		case <-ctx.Done():
 			return
 		}
 	}

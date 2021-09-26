@@ -2,6 +2,7 @@ package msngr
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"io"
 	"reflect"
@@ -33,15 +34,19 @@ func (m *Messenger) processIn() {
 
 			ss, ok := m.streamsIn[p]
 			if !ok {
-				ss = make(map[inet.Stream]struct{})
+				ss = make(map[inet.Stream]context.CancelFunc)
 				m.streamsIn[p] = ss
 			} else if len(ss) != 0 {
-				// duplicate? overwrite with the recent one
+				// duplicate? we use the recent stream only
+				for _, cancel := range ss {
+					cancel()
+				}
 				log.Warnw("duplicate stream", "from", p.ShortString())
 			}
 
-			go m.msgsIn(s)
-			ss[s] = struct{}{}
+			ctx, cancel := context.WithCancel(m.ctx)
+			go m.msgsIn(ctx, s)
+			ss[s] = cancel
 		case s := <-m.deadStreamsIn:
 			delete(m.streamsIn[s.Conn().RemotePeer()], s)
 		case <-m.ctx.Done():
@@ -50,7 +55,7 @@ func (m *Messenger) processIn() {
 	}
 }
 
-func (m *Messenger) msgsIn(s inet.Stream) {
+func (m *Messenger) msgsIn(ctx context.Context, s inet.Stream) {
 	defer s.Close()
 	r := bufio.NewReader(s)
 
@@ -65,7 +70,7 @@ func (m *Messenger) msgsIn(s inet.Stream) {
 		if err != nil {
 			select {
 			case m.deadStreamsIn <- s:
-			case <-m.ctx.Done():
+			case <-ctx.Done():
 				return
 			}
 
@@ -79,7 +84,7 @@ func (m *Messenger) msgsIn(s inet.Stream) {
 
 		select {
 		case m.inbound <- msg:
-		case <-m.ctx.Done():
+		case <-ctx.Done():
 			return
 		default:
 			log.Warnw("message dropped (slow Receive reader)", "from", from.ShortString())

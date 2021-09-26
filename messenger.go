@@ -1,4 +1,8 @@
-// TODO: Docs
+// TODO:
+//  * Docs
+//  * Coverage batch
+//  * License
+//  * Diagram
 
 // TODO: Required features
 //  * Make close to block until all messages are processed
@@ -35,12 +39,12 @@ type Messenger struct {
 	msgTp reflect.Type
 
 	inbound       chan *msgWrap
-	streamsIn     map[peer.ID]map[inet.Stream]struct{}
+	streamsIn     map[peer.ID]map[inet.Stream]context.CancelFunc
 	newStreamsIn  chan inet.Stream
 	deadStreamsIn chan inet.Stream
 
 	outbound       chan *msgWrap
-	streamsOut     map[peer.ID]map[inet.Stream]struct{}
+	streamsOut     map[peer.ID]map[inet.Stream]context.CancelFunc
 	newStreamsOut  chan inet.Stream
 	deadStreamsOut chan inet.Stream
 	peersOut       map[peer.ID]chan *msgWrap
@@ -57,11 +61,11 @@ func New(host host.Host, opts ...Option) (*Messenger, error) {
 		host:           host,
 		msgTp:          reflect.TypeOf(serde.PlainMessage{}),
 		inbound:        make(chan *msgWrap, 32),
-		streamsIn:      make(map[peer.ID]map[inet.Stream]struct{}),
+		streamsIn:      make(map[peer.ID]map[inet.Stream]context.CancelFunc),
 		newStreamsIn:   make(chan inet.Stream, 4),
 		deadStreamsIn:  make(chan inet.Stream, 2),
 		outbound:       make(chan *msgWrap, 32),
-		streamsOut:     make(map[peer.ID]map[inet.Stream]struct{}),
+		streamsOut:     make(map[peer.ID]map[inet.Stream]context.CancelFunc),
 		newStreamsOut:  make(chan inet.Stream, 4),
 		deadStreamsOut: make(chan inet.Stream, 2),
 		peersOut:       make(map[peer.ID]chan *msgWrap),
