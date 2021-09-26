@@ -8,6 +8,9 @@ import (
 	pool "github.com/libp2p/go-buffer-pool"
 )
 
+// TODO: 1mb is reasonable, but it still makes sense to make it configurable per messenger, rather than globally
+var MaxMessageSize uint64 = 1 << 20
+
 type Message interface {
 	Size() int
 	MarshalTo([]byte) (int, error)
@@ -62,6 +65,9 @@ func Read(r io.Reader, msg Message) (n int, err error) {
 	size, err := binary.ReadUvarint(&byteCounter{br, &n})
 	if err != nil {
 		return
+	}
+	if size > MaxMessageSize {
+		return n, fmt.Errorf("serde: message exceeds max allowed size")
 	}
 
 	buf := pool.Get(int(size))
