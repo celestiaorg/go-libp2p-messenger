@@ -4,12 +4,15 @@
 //  * License
 //  * Diagram
 
-// TODO: Required features
-//  * Make close to block until all messages are processed
+// TODO:
 //  * Stream per Message type
+//  * Rereview error handling for Broadcast and messages to disconnected peers.
+//  * Make close to block until all messages are processed
+//  * Duplicates test
 
 // TODO: API
-//   * Events API is bad, the point below should fix it
+//   * Add ReceiveFrom method
+//   * Events API can be removed with the point below
 //	 * Alternative API where user passes handlers instead of relying on channels
 //   * Built-in Request/Response API
 
@@ -32,21 +35,23 @@ import (
 
 var log = logging.Logger("msngr")
 
+// Messenger provides a simple API to send messages to multiple peers.
 type Messenger struct {
-	pids []protocol.ID
 	host host.Host
-
+	pids []protocol.ID
 	msgTp reflect.Type
 
+	// fields below are used and protected in processIn
 	inbound       chan *msgWrap
-	streamsIn     map[peer.ID]map[inet.Stream]context.CancelFunc
 	newStreamsIn  chan inet.Stream
 	deadStreamsIn chan inet.Stream
+	streamsIn     map[peer.ID]map[inet.Stream]context.CancelFunc
 
+	// fields below are used and protected by processOut
 	outbound       chan *msgWrap
-	streamsOut     map[peer.ID]map[inet.Stream]context.CancelFunc
 	newStreamsOut  chan inet.Stream
 	deadStreamsOut chan inet.Stream
+	streamsOut     map[peer.ID]map[inet.Stream]context.CancelFunc
 	peersOut       map[peer.ID]chan *msgWrap
 
 	events chan PeerEvent
@@ -55,20 +60,23 @@ type Messenger struct {
 	cancel context.CancelFunc
 }
 
+// New instantiates a Messenger.
+// WithProtocols option is mandatory for at least one protocol.
+// WithMessageType overrides default serde.PlainMessage.
 func New(host host.Host, opts ...Option) (*Messenger, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Messenger{
 		host:           host,
 		msgTp:          reflect.TypeOf(serde.PlainMessage{}),
 		inbound:        make(chan *msgWrap, 32),
-		streamsIn:      make(map[peer.ID]map[inet.Stream]context.CancelFunc),
 		newStreamsIn:   make(chan inet.Stream, 4),
 		deadStreamsIn:  make(chan inet.Stream, 2),
+		streamsIn:      make(map[peer.ID]map[inet.Stream]context.CancelFunc),
 		outbound:       make(chan *msgWrap, 32),
-		streamsOut:     make(map[peer.ID]map[inet.Stream]context.CancelFunc),
 		newStreamsOut:  make(chan inet.Stream, 4),
 		deadStreamsOut: make(chan inet.Stream, 2),
 		peersOut:       make(map[peer.ID]chan *msgWrap),
+		streamsOut:     make(map[peer.ID]map[inet.Stream]context.CancelFunc),
 		events:         make(chan PeerEvent, 8),
 		ctx:            ctx,
 		cancel:         cancel,
@@ -84,20 +92,15 @@ func New(host host.Host, opts ...Option) (*Messenger, error) {
 	return m, nil
 }
 
+// Host is a getter for the Host.
 func (m *Messenger) Host() host.Host {
 	return m.host
 }
 
-func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) <-chan error {
-	msg := &msgWrap{
-		Message: out,
-		bcast:   true,
-		done:    make(chan error, 1),
-	}
-	m.send(ctx, msg)
-	return msg.done
-}
-
+// Send sends the given message 'out' to the 'peer' to.
+// The returned channel is always closed once the message is sent successfully or with an error.
+// All messages are sent in a per peer queue, so the ordering of sent messages is guaranteed.
+// In case the Messenger is given with a RoutedHost, It tries to connect to the peer, if not connected.
 func (m *Messenger) Send(ctx context.Context, out serde.Message, to peer.ID) <-chan error {
 	msg := &msgWrap{
 		Message: out,
@@ -108,6 +111,9 @@ func (m *Messenger) Send(ctx context.Context, out serde.Message, to peer.ID) <-c
 	return msg.done
 }
 
+// Receive awaits for incoming messages from peers.
+// It receives messages sent through both Send and Broadcast.
+// Ti errors only if the given context 'ctx' is closed or when Messenger itself is close.
 func (m *Messenger) Receive(ctx context.Context) (serde.Message, peer.ID, error) {
 	select {
 	case msg := <-m.inbound:
@@ -119,17 +125,33 @@ func (m *Messenger) Receive(ctx context.Context) (serde.Message, peer.ID, error)
 	}
 }
 
-type PeerEvent struct {
-	ID    peer.ID
-	State inet.Connectedness // Connected or NotConnected only
+// Broadcast sends the given message 'out' to each connected peer speaking the same protocol.
+// WARNING: It should be used deliberately. Avoid use cases requiring message propagation to a whole protocol network,
+//  not to flood the network with message duplicates. For such cases use libp2p.PubSub instead.
+func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) <-chan error {
+	msg := &msgWrap{
+		Message: out,
+		bcast:   true,
+		done:    make(chan error, 1),
+	}
+	m.send(ctx, msg)
+	return msg.done
 }
 
+// PeerEvent points to a peer and to a latest connection state with it.
+type PeerEvent struct {
+	ID    peer.ID
+	State inet.Connectedness // Can be Connected or NotConnected only
+}
+
+// Events notifies about connection state changes of peers.
 // If messenger is started over Host with existing connections,
 // for every existing peer there will be an event.
 func (m *Messenger) Events() <-chan PeerEvent {
 	return m.events
 }
 
+// Close stop the Messenger and unregisters further protocol handling on the Host.
 func (m *Messenger) Close() error {
 	m.cancel()
 	m.deinit()

@@ -9,14 +9,19 @@ import (
 	"github.com/celestiaorg/go-libp2p-messenger/serde"
 )
 
+// Option defines an functional configurability for Messenger.
 type Option func(messenger *Messenger)
 
+// WithProtocols sets custom protocols for messenger to speak with
+// At least one protocol is required.
 func WithProtocols(pids ...protocol.ID) Option {
 	return func(m *Messenger) {
 		m.pids = pids
 	}
 }
 
+// WithMessageType sets a custom message type for receiving messages.
+// Otherwise Messenger would not know what type to return in Receive.
 func WithMessageType(msg serde.Message) Option {
 	return func(m *Messenger) {
 		tp := reflect.TypeOf(msg)

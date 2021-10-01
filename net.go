@@ -30,7 +30,6 @@ func (m *Messenger) connect(p peer.ID) {
 	err := m.host.Connect(m.ctx, peer.AddrInfo{ID: p})
 	if err != nil {
 		log.Errorw("connecting", "to", p.ShortString(), "err", err)
-		return
 	}
 }
 

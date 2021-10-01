@@ -12,6 +12,7 @@ import (
 	"github.com/celestiaorg/go-libp2p-messenger/serde"
 )
 
+// streamIn handles inbound streams from StreamHandler registered on the Host.
 func (m *Messenger) streamIn(s inet.Stream) {
 	select {
 	case m.newStreamsIn <- s:
@@ -20,6 +21,7 @@ func (m *Messenger) streamIn(s inet.Stream) {
 	}
 }
 
+// processIn means processing everything related inbound data.
 func (m *Messenger) processIn() {
 	defer func() {
 		for p := range m.streamsIn {
@@ -55,6 +57,7 @@ func (m *Messenger) processIn() {
 	}
 }
 
+// msgsIn handles an inbound peer stream lifecycle and reads msgs from it handing them to inbound chan.
 func (m *Messenger) msgsIn(ctx context.Context, s inet.Stream) {
 	defer s.Close()
 	r := bufio.NewReader(s)

@@ -61,10 +61,10 @@ func TestSendPeersDisconnected(t *testing.T) {
 	mnet, err := mocknet.FullMeshLinked(ctx, 2)
 	require.NoError(t, err)
 
-	min, err := New(mnet.Hosts()[0], WithProtocols(tproto))
+	min, err := New(mnet.Hosts()[0], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
 	require.NoError(t, err)
 
-	mout, err := New(mnet.Hosts()[1], WithProtocols(tproto))
+	mout, err := New(mnet.Hosts()[1], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
 	require.NoError(t, err)
 
 	msgin := randPlainMessage(256)

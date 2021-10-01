@@ -9,6 +9,7 @@ import (
 	"github.com/celestiaorg/go-libp2p-messenger/serde"
 )
 
+// streamOut stands for outbound streams creation.
 func (m *Messenger) streamOut(p peer.ID) {
 	s, err := m.host.NewStream(m.ctx, p, m.pids...)
 	if err != nil {
@@ -24,6 +25,7 @@ func (m *Messenger) streamOut(p peer.ID) {
 	}
 }
 
+// processOut means processing everything related to outbound data.
 func (m *Messenger) processOut() {
 	defer func() {
 		close(m.events)
@@ -128,6 +130,7 @@ func (m *Messenger) processOut() {
 	}
 }
 
+// msgsOut handles outbound peer stream lifycycle and writes outgoing messages handed from processOut
 func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan *msgWrap) {
 	closed := make(chan struct{})
 	go func() {
