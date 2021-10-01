@@ -1,23 +1,3 @@
-// TODO:
-//  * Docs
-//  * Coverage batch
-//  * License
-//  * Diagram
-
-// TODO:
-//  * Stream per Message type
-//  * Rereview error handling for Broadcast and messages to disconnected peers.
-//  * Make close to block until all messages are processed
-//  * Duplicates test
-
-// TODO: API
-//   * Add ReceiveFrom method
-//   * Events API can be removed with the point below
-//	 * Alternative API where user passes handlers instead of relying on channels
-//   * Built-in Request/Response API
-
-// TODO: Metrics
-//  * Collect Read/Write bandwidth usage
 package msngr
 
 import (
