@@ -35,8 +35,10 @@ optimizes protocols by removing unnecessary stream negotiations, which are prima
   networking. The project's team, through time, developed an in-house solution for it. However, they are now committed 
   to migration over libp2p.
 
-  Tendermint is a towering stack of multiple sub-protocols(or their terms -  reactors) which rely on patterns explained 
+  Tendermint is a towering stack of multiple sub-protocols(or their terms - reactors) which rely on patterns explained 
   above. Therefore, a lesser code boilerplate and simple API would be convenient for such migration.
+  > Technically, Tendermint p2p stack only supports 'fire and forget' pattern, but a few sub-protocols can benefit from
+  > migration to Request/Response pattern.
   
 ## API
 > NOTE: It is not entirely stable, and there are minor plans to change it slightly.
