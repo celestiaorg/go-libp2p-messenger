@@ -35,4 +35,3 @@ func (bc *byteCounter) ReadByte() (byte, error) {
 	*bc.i++
 	return b, nil
 }
-
