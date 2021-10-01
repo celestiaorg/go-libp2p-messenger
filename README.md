@@ -51,7 +51,7 @@ See [these docs][pkg-url].
 
 ## License
 
-[MIT License](LICENSE).
+[Apache-2.0](LICENSE).
 
 [build-img]: https://github.com/celestiaorg/go-libp2p-messenger/actions/workflows/go.yml/badge.svg
 [build-url]: https://github.com/celestiaorg/go-libp2p-messenger/actions
