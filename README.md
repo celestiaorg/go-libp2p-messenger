@@ -59,6 +59,6 @@ See [these docs][pkg-url].
 [pkg-url]: https://pkg.go.dev/github.com/celestiaorg/go-libp2p-messenger/
 [reportcard-img]: https://goreportcard.com/badge/celestiaorg/go-libp2p-messenger
 [reportcard-url]: https://goreportcard.com/report/celestiaorg/go-libp2p-messenger
-[coverage-img]: https://codecov.io/gh/celestiaorg/go-libp2p-messenger/branch/master/graph/badge.svg
+[coverage-img]: https://codecov.io/gh/celestiaorg/go-libp2p-messenger/branch/main/graph/badge.svg
 [coverage-url]: https://codecov.io/gh/celestiaorg/go-libp2p-messenger
 
