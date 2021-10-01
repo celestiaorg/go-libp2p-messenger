@@ -2,6 +2,7 @@ package serde
 
 import "bytes"
 
+// PlainMessage is the simplest implementation for Message which only copies bytes as a serialization.
 type PlainMessage struct {
 	Data []byte
 }
