@@ -53,7 +53,7 @@ See [these docs][pkg-url].
 
 [MIT License](LICENSE).
 
-[build-img]: https://github.com/celestiaorg/go-libp2p-messenger/workflows/build/badge.svg
+[build-img]: https://github.com/celestiaorg/go-libp2p-messenger/actions/workflows/go.yml/badge.svg
 [build-url]: https://github.com/celestiaorg/go-libp2p-messenger/actions
 [pkg-img]: https://pkg.go.dev/badge/celestiaorg/go-libp2p-messenger/v3
 [pkg-url]: https://pkg.go.dev/github.com/celestiaorg/go-libp2p-messenger/v3
