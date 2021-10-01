@@ -4,11 +4,11 @@
 [![reportcard-img]][reportcard-url]
 [![coverage-img]][coverage-url]
 
-Messenger provides a simple arbitrary message sending API to multiple peers for libp2p-based protocols. The main
+Messenger provides a simple arbitrary message sending API to multiple peers for [libp2p](https://github.com/libp2p/go-libp2p)-based protocols. The main
 purpose is to bootstrap development for new protocols and decrease boilerplate code.
 
 ## Background
-The [libp2p library](https://github.com/libp2p/go-libp2p) provides all necessary primitives to build custom fully 
+The libp2p provides all necessary primitives to build custom fully 
 decentralized p2p protocols. Also, it is solely stream-based for reasons, but in practice, the vast majority of libp2p
 based protocols are message-based, with messages sent over reliable and multiplexed streams.
 
