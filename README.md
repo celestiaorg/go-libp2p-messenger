@@ -1,4 +1,9 @@
 # Messenger
+[![build-img]][build-url]
+[![pkg-img]][pkg-url]
+[![reportcard-img]][reportcard-url]
+[![coverage-img]][coverage-url]
+
 Messenger provides a simple arbitrary message sending API to multiple peers for libp2p-based protocols. The main
 purpose is to bootstrap development for new protocols and decrease boilerplate code.
 
@@ -40,12 +45,20 @@ optimizes protocols by removing unnecessary stream negotiations, which are prima
   > Technically, Tendermint p2p stack only supports 'fire and forget' pattern, but a few sub-protocols can benefit from
   > migration to Request/Response pattern.
   
-## API
-> NOTE: It is not entirely stable, and there are minor plans to change it slightly.
+## Documentation
 
-// TODO: Link to godoc.
+See [these docs][pkg-url].
 
-## Design
+## License
 
-// TODO: Link to design doc
+[MIT License](LICENSE).
+
+[build-img]: https://github.com/celestiaorg/go-libp2p-messenger/workflows/build/badge.svg
+[build-url]: https://github.com/celestiaorg/go-libp2p-messenger/actions
+[pkg-img]: https://pkg.go.dev/badge/celestiaorg/go-libp2p-messenger/v3
+[pkg-url]: https://pkg.go.dev/github.com/celestiaorg/go-libp2p-messenger/v3
+[reportcard-img]: https://goreportcard.com/badge/celestiaorg/go-libp2p-messenger
+[reportcard-url]: https://goreportcard.com/report/celestiaorg/go-libp2p-messenger
+[coverage-img]: https://codecov.io/gh/celestiaorg/go-libp2p-messenger/branch/master/graph/badge.svg
+[coverage-url]: https://codecov.io/gh/celestiaorg/go-libp2p-messenger
 
