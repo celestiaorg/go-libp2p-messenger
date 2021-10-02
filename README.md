@@ -7,6 +7,12 @@
 Messenger provides a simple arbitrary message sending API to multiple peers for [libp2p](https://github.com/libp2p/go-libp2p)-based protocols. The main
 purpose is to bootstrap development for new protocols and decrease boilerplate code.
 
+## Features
+* Simple non-blocking API
+* Not a protocol - sends only user's data without message wrapping on the wire
+* Not a framework - use it anyhow
+* Ready for generics
+
 ## Background
 The libp2p provides all necessary primitives to build custom fully 
 decentralized p2p protocols. Also, it is solely stream-based for reasons, but in practice, the vast majority of libp2p
