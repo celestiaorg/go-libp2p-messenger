@@ -28,7 +28,6 @@ func (m *Messenger) streamOut(p peer.ID) {
 // processOut means processing everything related to outbound data.
 func (m *Messenger) processOut() {
 	defer func() {
-		close(m.events)
 		for p := range m.streamsOut {
 			delete(m.streamsOut, p)
 		}
@@ -36,14 +35,6 @@ func (m *Messenger) processOut() {
 			delete(m.peersOut, p)
 		}
 	}()
-
-	fire := func(evt PeerEvent) {
-		select {
-		case m.events <- evt:
-		default:
-			log.Warnf("event dropped(Slow Events reader)")
-		}
-	}
 
 	for {
 		select {
@@ -63,18 +54,20 @@ func (m *Messenger) processOut() {
 			if !ok {
 				out = make(chan *msgWrap, 32)
 				m.peersOut[msg.to] = out
-				// if no outbound chan for the peer, then assume there is no respective stream and thus connection
+			}
+
+			if len(m.streamsOut[msg.to]) == 0 {
+				// connect if there is no streams
+				// new connection will trigger new stream establishment
+				log.Debugw("connect", "to", msg.to.ShortString())
 				go m.connect(msg.to)
 			}
 
 			select {
-			// TODO: The case where we failed to create a stream to a non connected peer is possible here and
-			//  once the channel is full this will block forever
 			case out <- msg:
-			case <-m.ctx.Done():
-				return
+			default:
+				log.Warnw("dropped msg - full buffer", "to", msg.to.ShortString())
 			}
-
 		case s := <-m.newStreamsOut:
 			p := s.Conn().RemotePeer()
 			log.Debugw("new stream", "to", p.ShortString())
@@ -85,9 +78,7 @@ func (m *Messenger) processOut() {
 				m.streamsOut[p] = ss
 			}
 
-			if len(ss) == 0 {
-				fire(PeerEvent{ID: p, State: inet.Connected})
-			} else {
+			if len(ss) != 0 {
 				// duplicate? we use the recent stream only
 				for _, cancel := range ss {
 					cancel()
@@ -113,7 +104,12 @@ func (m *Messenger) processOut() {
 				// cleanup of an original stream in case of a duplicate
 				continue
 			}
-			fire(PeerEvent{ID: p, State: inet.NotConnected})
+
+			// if no more streams, but there are msgs to send - trigger reconnect
+			if len(m.peersOut[p]) > 0 {
+				log.Warnw("reconnect", "to", p.ShortString())
+				go m.reconnect(p)
+			}
 
 			// TODO: This is the place where we could also cleanup outbound chan,
 			//  but the reason for peer being dead might be a short term disconnect,
@@ -130,7 +126,7 @@ func (m *Messenger) processOut() {
 	}
 }
 
-// msgsOut handles outbound peer stream lifycycle and writes outgoing messages handed from processOut
+// msgsOut handles outbound peer stream lifecycle and writes outgoing messages handed from processOut
 func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan *msgWrap) {
 	closed := make(chan struct{})
 	go func() {
@@ -145,6 +141,7 @@ func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan *msgW
 		close(closed)
 		select {
 		case m.deadStreamsOut <- s:
+			log.Warnw("dead stream", "to", s.Conn().RemotePeer().ShortString())
 		case <-m.ctx.Done():
 		}
 	}()

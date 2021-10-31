@@ -24,13 +24,25 @@ func (m *Messenger) deinit() {
 
 func (m *Messenger) connect(p peer.ID) {
 	// TODO: Retry with backoff several times and clean up outbound channel
-	// TODO: Throttle simultaneous connections
 
 	// assuming Host is wrapped with RoutedHost
 	err := m.host.Connect(m.ctx, peer.AddrInfo{ID: p})
 	if err != nil {
 		log.Errorw("connecting", "to", p.ShortString(), "err", err)
 	}
+}
+
+func (m *Messenger) reconnect(p peer.ID) {
+	for _, c := range m.host.Network().ConnsToPeer(p) {
+		if c.Stat().Transient {
+			continue
+		}
+
+		m.Connected(nil, c)
+		return
+	}
+
+	m.connect(p)
 }
 
 func (m *Messenger) Connected(_ network.Network, c network.Conn) {

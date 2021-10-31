@@ -34,8 +34,6 @@ type Messenger struct {
 	streamsOut     map[peer.ID]map[inet.Stream]context.CancelFunc
 	peersOut       map[peer.ID]chan *msgWrap
 
-	events chan PeerEvent
-
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -57,7 +55,6 @@ func New(host host.Host, opts ...Option) (*Messenger, error) {
 		deadStreamsOut: make(chan inet.Stream, 2),
 		peersOut:       make(map[peer.ID]chan *msgWrap),
 		streamsOut:     make(map[peer.ID]map[inet.Stream]context.CancelFunc),
-		events:         make(chan PeerEvent, 8),
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -116,19 +113,6 @@ func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) <-chan err
 	}
 	m.send(ctx, msg)
 	return msg.done
-}
-
-// PeerEvent points to a peer and to a latest connection state with it.
-type PeerEvent struct {
-	ID    peer.ID
-	State inet.Connectedness // Can be Connected or NotConnected only
-}
-
-// Events notifies about connection state changes of peers.
-// If messenger is started over Host with existing connections,
-// for every existing peer there will be an event.
-func (m *Messenger) Events() <-chan PeerEvent {
-	return m.events
 }
 
 // Close stop the Messenger and unregisters further protocol handling on the Host.
