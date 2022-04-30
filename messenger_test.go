@@ -38,7 +38,7 @@ func TestSend_PeersConnected(t *testing.T) {
 	defer cancel()
 
 	// create network with connected peers
-	mnet, err := mocknet.FullMeshConnected(ctx, 2)
+	mnet, err := mocknet.FullMeshConnected(2)
 	require.NoError(t, err)
 
 	min, err := New(mnet.Hosts()[0], WithProtocols(tproto))
@@ -68,7 +68,7 @@ func TestSend_PeersDisconnected(t *testing.T) {
 	defer cancel()
 
 	// create network with linked, but disconnected peers
-	mnet, err := mocknet.FullMeshLinked(ctx, 2)
+	mnet, err := mocknet.FullMeshLinked(2)
 	require.NoError(t, err)
 
 	min, err := New(mnet.Hosts()[0], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
@@ -149,7 +149,7 @@ func TestStreamDuplicates(t *testing.T) {
 	// wait some time
 	time.Sleep(time.Millisecond * 100)
 
-	tcp, err := tcp.NewTCPTransport(swarmt.GenUpgrader(hosts[1].Network().(*swarm.Swarm)))
+	tcp, err := tcp.NewTCPTransport(swarmt.GenUpgrader(t, hosts[1].Network().(*swarm.Swarm)), nil)
 	require.NoError(t, err)
 
 	var addr multiaddr.Multiaddr
@@ -210,7 +210,7 @@ func TestSend_Events(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	mnet, err := mocknet.FullMeshLinked(ctx, 3)
+	mnet, err := mocknet.FullMeshLinked(3)
 	require.NoError(t, err)
 
 	firstHst := mnet.Hosts()[0]
@@ -266,7 +266,7 @@ func TestGroupBroadcast(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	mnet, err := mocknet.FullMeshConnected(ctx, netSize)
+	mnet, err := mocknet.FullMeshConnected(netSize)
 	require.NoError(t, err)
 
 	// create messengers according to netSize
