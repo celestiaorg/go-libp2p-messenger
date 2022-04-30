@@ -2,14 +2,23 @@ package msngr
 
 import (
 	"context"
+	"io"
 	"math/rand"
 	"testing"
 	"time"
 
+	logging "github.com/ipfs/go-log/v2"
+	bhost "github.com/libp2p/go-libp2p-blankhost"
+	"github.com/libp2p/go-libp2p-core/event"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/protocol"
+	swarm "github.com/libp2p/go-libp2p-swarm"
+	swarmt "github.com/libp2p/go-libp2p-swarm/testing"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	"github.com/libp2p/go-tcp-transport"
+	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multistream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -23,7 +32,8 @@ const tproto protocol.ID = "/test"
 // To see logs for whole libp2p stack use:
 //  logging.SetDebugLogging()
 
-func TestSendPeersConnected(t *testing.T) {
+// Checks that messenger is send a message, if peers are connected.
+func TestSend_PeersConnected(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
@@ -53,7 +63,7 @@ func TestSendPeersConnected(t *testing.T) {
 }
 
 // Checks that messenger is able to connect and send a message, if peers are not connected.
-func TestSendPeersDisconnected(t *testing.T) {
+func TestSend_PeersDisconnected(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
@@ -82,88 +92,172 @@ func TestSendPeersDisconnected(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestEvents(t *testing.T) {
+func TestReconnect(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancel()
+
+	hosts := realTransportHosts(t, 2)
+
+	min, err := New(hosts[0], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	require.NoError(t, err)
+
+	mout, err := New(hosts[1], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	require.NoError(t, err)
+
+	err = hosts[0].Connect(ctx, *host.InfoFromHost(hosts[1]))
+	require.NoError(t, err)
+
+	// wait some time
+	time.Sleep(time.Millisecond * 100)
+
+	go func() {
+		for i := range make([]int, 10) {
+			if i == 8 {
+				err = hosts[0].Network().ClosePeer(hosts[1].ID())
+				require.NoError(t, err)
+			}
+			min.Send(ctx, randPlainMessage(256), hosts[1].ID())
+		}
+	}()
+
+	for i := range make([]int, 9) {
+		_, _, err := mout.Receive(ctx)
+		if !assert.NoError(t, err) {
+			t.Log(i)
+			return
+		}
+	}
+}
+
+func TestStreamDuplicates(t *testing.T) {
+	logging.SetLogLevel("msngr", "debug")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	hosts := realTransportHosts(t, 2)
+
+	min, err := New(hosts[0], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	require.NoError(t, err)
+
+	_, err = New(hosts[1], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	require.NoError(t, err)
+
+	err = hosts[0].Connect(ctx, *host.InfoFromHost(hosts[1]))
+	require.NoError(t, err)
+
+	// wait some time
+	time.Sleep(time.Millisecond * 100)
+
+	tcp, err := tcp.NewTCPTransport(swarmt.GenUpgrader(hosts[1].Network().(*swarm.Swarm)))
+	require.NoError(t, err)
+
+	var addr multiaddr.Multiaddr
+	for _, a := range hosts[0].Addrs() {
+		ps := a.Protocols()
+		if ps[len(ps)-1].Code == multiaddr.P_TCP {
+			addr = a
+			break
+		}
+	}
+
+	err = hosts[0].Network().ClosePeer(hosts[1].ID())
+	require.NoError(t, err)
+
+	conn, err := tcp.Dial(ctx, addr, hosts[0].ID())
+	require.NoError(t, err)
+
+	// check sending on duplicate
+	out, err := conn.OpenStream(ctx)
+	require.NoError(t, err)
+
+	err = multistream.SelectProtoOrFail(string(tproto), out)
+	require.NoError(t, err)
+
+	msgout := randPlainMessage(256)
+	_, err = serde.Write(out, msgout)
+	require.NoError(t, err)
+
+	msgin, from, err := min.Receive(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, hosts[1].ID(), from)
+	assert.Equal(t, msgout.Data, msgin.(*serde.PlainMessage).Data)
+
+	// // check receiving on duplicate
+	sin, err := conn.AcceptStream()
+	require.NoError(t, err)
+
+	ms := multistream.NewMultistreamMuxer()
+	ms.AddHandler(string(tproto), func(protocol string, rwc io.ReadWriteCloser) error {
+		_, err = serde.Read(rwc, msgin)
+		require.NoError(t, err)
+		assert.Equal(t, msgout.Data, msgin.(*serde.PlainMessage).Data)
+		return nil
+	})
+
+	_, h, err := ms.Negotiate(sin)
+	require.NoError(t, err)
+
+	msgout = randPlainMessage(256)
+	done := min.Send(ctx, msgout, hosts[1].ID())
+	require.NoError(t, <-done)
+
+	err = h("", sin)
+	require.NoError(t, err)
+}
+
+func TestSend_Events(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	mnet, err := mocknet.FullMeshLinked(ctx, 3)
 	require.NoError(t, err)
 
-	// preconnect third node with first and second
-	_, err = mnet.ConnectPeers(mnet.Peers()[2], mnet.Peers()[0])
-	require.NoError(t, err)
-	_, err = mnet.ConnectPeers(mnet.Peers()[2], mnet.Peers()[1])
+	firstHst := mnet.Hosts()[0]
+	firstSub, err := firstHst.EventBus().Subscribe(&event.EvtPeerConnectednessChanged{})
 	require.NoError(t, err)
 
-	firstId := mnet.Hosts()[0].ID()
 	first, err := New(mnet.Hosts()[0], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	secondId := mnet.Hosts()[1].ID()
+	secondHst := mnet.Hosts()[1]
+	secondSub, err := secondHst.EventBus().Subscribe(&event.EvtPeerConnectednessChanged{})
+	require.NoError(t, err)
+
 	second, err := New(mnet.Hosts()[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	thirdId := mnet.Hosts()[2].ID()
-	_, err = New(mnet.Hosts()[2], WithProtocols(tproto))
+	_, err = mnet.ConnectPeers(mnet.Peers()[0], mnet.Peers()[1])
 	require.NoError(t, err)
 
-	// ensure first and second receive an event for a preconnected third node.
-	evt := <-first.Events()
-	assert.Equal(t, evt.ID, thirdId)
-	assert.Equal(t, evt.State, network.Connected)
-	evt = <-second.Events()
-	assert.Equal(t, evt.ID, thirdId)
-	assert.Equal(t, evt.State, network.Connected)
+	evt := (<-firstSub.Out()).(event.EvtPeerConnectednessChanged)
+	assert.Equal(t, evt.Peer, secondHst.ID())
+	assert.Equal(t, evt.Connectedness, network.Connected)
 
-	// connect first and second now
-	err = first.Host().Connect(ctx, *host.InfoFromHost(second.host))
-	require.NoError(t, err)
+	evt = (<-secondSub.Out()).(event.EvtPeerConnectednessChanged)
+	assert.Equal(t, evt.Peer, firstHst.ID())
+	assert.Equal(t, evt.Connectedness, network.Connected)
 
-	// check that both received an event
-	evt = <-first.Events()
-	assert.Equal(t, evt.ID, secondId)
-	assert.Equal(t, evt.State, network.Connected)
-	evt = <-second.Events()
-	assert.Equal(t, evt.ID, firstId)
-	assert.Equal(t, evt.State, network.Connected)
+	done := first.Send(ctx, randPlainMessage(256), secondHst.ID())
+	assert.NoError(t, <-done)
+	done = second.Send(ctx, randPlainMessage(256), firstHst.ID())
+	assert.NoError(t, <-done)
 
-	// close the connection between first and second
-	conns := first.Host().Network().ConnsToPeer(secondId)
-	require.NotEmpty(t, conns)
-	err = conns[0].Close()
-	require.NoError(t, err)
-
-	// close all the connections of third
-	conns = mnet.Hosts()[2].Network().Conns()
-	require.NotEmpty(t, conns)
-	err = conns[0].Close()
-	require.NoError(t, err)
-	err = conns[1].Close()
-	require.NoError(t, err)
-
-	// check for the NotConnected event
-	evt = <-first.Events()
-	assert.Equal(t, evt.ID, secondId)
-	assert.Equal(t, evt.State, network.NotConnected)
-	evt = <-second.Events()
-	assert.Equal(t, evt.ID, firstId)
-	assert.Equal(t, evt.State, network.NotConnected)
-	evt = <-first.Events()
-	assert.Equal(t, evt.ID, thirdId)
-	assert.Equal(t, evt.State, network.NotConnected)
-	evt = <-second.Events()
-	assert.Equal(t, evt.ID, thirdId)
-	assert.Equal(t, evt.State, network.NotConnected)
+	_, from, err := first.Receive(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, secondHst.ID(), from)
+	_, from, err = second.Receive(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, firstHst.ID(), from)
 
 	err = first.Close()
 	require.NoError(t, err)
+	err = firstSub.Close()
+	require.NoError(t, err)
 	err = second.Close()
 	require.NoError(t, err)
-
-	_, ok := <-first.Events()
-	assert.False(t, ok)
-	_, ok = <-second.Events()
-	assert.False(t, ok)
+	err = secondSub.Close()
+	require.NoError(t, err)
 }
 
 func TestGroupBroadcast(t *testing.T) {
@@ -182,12 +276,8 @@ func TestGroupBroadcast(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// ensure everyone is connected
-	for _, m := range ms {
-		for range ms[1:] {
-			<-m.Events()
-		}
-	}
+	// have to wait till everyone ready
+	time.Sleep(time.Second)
 
 	// do actual broadcasting
 	for _, m := range ms {
@@ -213,4 +303,15 @@ func randPlainMessage(size int) *serde.PlainMessage {
 	msg := &serde.PlainMessage{Data: make([]byte, size)}
 	rand.Read(msg.Data)
 	return msg
+}
+
+func realTransportHosts(t *testing.T, n int) []host.Host {
+	out := make([]host.Host, n)
+	for i := range out {
+		netw := swarmt.GenSwarm(t)
+		h := bhost.NewBlankHost(netw)
+		out[i] = h
+	}
+
+	return out
 }
