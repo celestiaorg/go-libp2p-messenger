@@ -120,6 +120,12 @@ func (m *Messenger) processOut() {
 			//  as msgsOut will read from the out chan and fail with msg reset. For this to be fixed more advanced
 			//  queue should be used instead of native Go chan.
 
+		case req := <-m.peersReqs:
+			out := make([]peer.ID, 0, len(m.peersOut))
+			for p := range m.peersOut {
+				out = append(out, p)
+			}
+			req <- out // not blocking
 		case <-m.ctx.Done():
 			return
 		}
