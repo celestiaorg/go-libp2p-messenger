@@ -32,7 +32,8 @@ type Messenger struct {
 	newStreamsOut  chan inet.Stream
 	deadStreamsOut chan inet.Stream
 	streamsOut     map[peer.ID]map[inet.Stream]context.CancelFunc
-	peersOut       map[peer.ID]chan *msgWrap
+	peersOut  map[peer.ID]chan *msgWrap
+	peersReqs chan chan []peer.ID
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -53,8 +54,9 @@ func New(host host.Host, opts ...Option) (*Messenger, error) {
 		outbound:       make(chan *msgWrap, 32),
 		newStreamsOut:  make(chan inet.Stream, 4),
 		deadStreamsOut: make(chan inet.Stream, 2),
-		peersOut:       make(map[peer.ID]chan *msgWrap),
 		streamsOut:     make(map[peer.ID]map[inet.Stream]context.CancelFunc),
+		peersOut:       make(map[peer.ID]chan *msgWrap),
+		peersReqs:      make(chan chan []peer.ID),
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -113,6 +115,22 @@ func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) <-chan err
 	}
 	m.send(ctx, msg)
 	return msg.done
+}
+
+// Peers returns a list of connected/immediate peers speaking the protocol registered on the Messenger.
+func (m *Messenger) Peers() []peer.ID {
+	req := make(chan []peer.ID, 1)
+	select {
+	case m.peersReqs <- req:
+		select {
+		case peers := <-req:
+			return peers
+		case <-m.ctx.Done():
+			return nil
+		}
+	case <-m.ctx.Done():
+		return nil
+	}
 }
 
 // Close stop the Messenger and unregisters further protocol handling on the Host.

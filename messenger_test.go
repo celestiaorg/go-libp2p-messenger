@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	logging "github.com/ipfs/go-log/v2"
 	bhost "github.com/libp2p/go-libp2p-blankhost"
 	"github.com/libp2p/go-libp2p-core/event"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -130,8 +129,6 @@ func TestReconnect(t *testing.T) {
 }
 
 func TestStreamDuplicates(t *testing.T) {
-	logging.SetLogLevel("msngr", "debug")
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
@@ -296,6 +293,28 @@ func TestGroupBroadcast(t *testing.T) {
 	for _, m := range ms {
 		err = m.Close()
 		require.NoError(t, err)
+	}
+}
+
+func TestPeers(t *testing.T) {
+	const netSize = 4
+
+	mnet, err := mocknet.FullMeshConnected(netSize)
+	require.NoError(t, err)
+
+	// create messengers according to netSize
+	ms := make([]*Messenger, netSize)
+	for i, h := range mnet.Hosts() {
+		ms[i], err = New(h, WithProtocols(tproto))
+		require.NoError(t, err)
+	}
+
+	// have to wait till everyone ready
+	time.Sleep(time.Millisecond*100)
+
+	for _, m := range ms {
+		peers := m.Peers()
+		assert.Len(t, peers, netSize-1)
 	}
 }
 
