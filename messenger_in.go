@@ -77,7 +77,7 @@ func (m *Messenger) msgsIn(ctx context.Context, s inet.Stream) {
 				return
 			}
 
-			if errors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) || errors.Is(err, inet.ErrReset) {
 				return
 			}
 			log.Errorw("reading message", "from", from.ShortString(), "err", err)
