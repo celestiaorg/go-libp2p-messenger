@@ -2,6 +2,7 @@ package msngr
 
 import (
 	"context"
+	"errors"
 	"reflect"
 
 	logging "github.com/ipfs/go-log/v2"
@@ -14,6 +15,9 @@ import (
 )
 
 var log = logging.Logger("msngr")
+
+// errClosed reports if messenger is closed.
+var errClosed = errors.New("msngr: closed")
 
 // Messenger provides a simple API to send messages to multiple peers.
 type Messenger struct {
@@ -77,7 +81,7 @@ func (m *Messenger) Host() host.Host {
 }
 
 // Send optimistically sends the given message 'out' to the peer 'to'.
-// It returns error only in case the given ctx was closed.
+// It errors in case the given ctx was closed or in case when Messenger is closed.
 // All messages are sent in a per peer queue, so the ordering of sent messages is guaranteed.
 // In case the Messenger is given with a RoutedHost, It tries to connect to the peer, if not connected.
 func (m *Messenger) Send(ctx context.Context, out serde.Message, to peer.ID) error {
@@ -89,7 +93,7 @@ func (m *Messenger) Send(ctx context.Context, out serde.Message, to peer.ID) err
 
 // Receive awaits for incoming messages from peers.
 // It receives messages sent through both Send and Broadcast.
-// Ti errors only if the given context 'ctx' is closed or when Messenger itself is close.
+// It errors only if the given context 'ctx' is closed or when Messenger is closed.
 func (m *Messenger) Receive(ctx context.Context) (serde.Message, peer.ID, error) {
 	select {
 	case msg := <-m.inbound:
@@ -97,7 +101,7 @@ func (m *Messenger) Receive(ctx context.Context) (serde.Message, peer.ID, error)
 	case <-ctx.Done():
 		return nil, "", ctx.Err()
 	case <-m.ctx.Done():
-		return nil, "", m.ctx.Err()
+		return nil, "", errClosed
 	}
 }
 
@@ -122,7 +126,7 @@ func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) (peer.IDSl
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-m.ctx.Done():
-		return nil, m.ctx.Err()
+		return nil, errClosed
 	}
 }
 
@@ -142,7 +146,7 @@ func (m *Messenger) Peers() []peer.ID {
 	}
 }
 
-// Close stop the Messenger and unregisters further protocol handling on the Host.
+// Close stops the Messenger and unregisters further protocol handling on the Host.
 func (m *Messenger) Close() error {
 	m.cancel()
 	m.deinit()
@@ -156,7 +160,7 @@ func (m *Messenger) send(ctx context.Context, msg *msgWrap) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-m.ctx.Done():
-		return m.ctx.Err()
+		return errClosed
 	}
 }
 
