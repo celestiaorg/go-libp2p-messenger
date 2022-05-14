@@ -1,19 +1,44 @@
 package msngr
 
 import (
+	"github.com/libp2p/go-libp2p-core/event"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
-	ma "github.com/multiformats/go-multiaddr"
 )
 
 func (m *Messenger) init() {
 	for _, pid := range m.pids {
 		m.host.SetStreamHandler(pid, m.streamIn)
 	}
-	m.host.Network().Notify(m)
-	for _, c := range m.host.Network().Conns() {
-		m.Connected(nil, c)
+	for _, c := range m.host.Network().Peers() {
+		m.connected(c)
 	}
+
+	sub, err := m.host.EventBus().Subscribe(&event.EvtPeerConnectednessChanged{})
+	if err != nil {
+		log.Errorw("subscribing to peer connectedness event", "err", err)
+		return
+	}
+
+	go func() {
+		for {
+			select {
+			case evt := <-sub.Out():
+				cevt := evt.(event.EvtPeerConnectednessChanged)
+				switch cevt.Connectedness {
+				case network.Connected:
+					m.connected(cevt.Peer)
+				// we don't care about NotConnected case, as it is handled by observing stream being reset
+				}
+			case <-m.ctx.Done():
+				err := sub.Close()
+				if err != nil {
+					log.Errorw("closing peer connectedness event subscription", "err", err)
+				}
+				return
+			}
+		}
+	}()
 }
 
 func (m *Messenger) deinit() {
@@ -22,8 +47,9 @@ func (m *Messenger) deinit() {
 	}
 }
 
+// connect tries to connect to the given peer
 func (m *Messenger) connect(p peer.ID) {
-	// TODO: Retry with backoff several times and clean up outbound channel
+	// TODO: Retry with backoff several times and clean up outbound channel if no success connecting
 
 	// assuming Host is wrapped with RoutedHost
 	err := m.host.Connect(m.ctx, peer.AddrInfo{ID: p})
@@ -32,33 +58,25 @@ func (m *Messenger) connect(p peer.ID) {
 	}
 }
 
+// reconnect initiates new connection to the peer if not connected
 func (m *Messenger) reconnect(p peer.ID) {
+	if m.connected(p) {
+		return
+	}
+	m.connect(p)
+}
+
+// connected reports if there is at least one stable(non-transient) connection to the given peer
+// and creates one stream to the peer if so.
+func (m *Messenger) connected(p peer.ID) bool {
 	for _, c := range m.host.Network().ConnsToPeer(p) {
 		if c.Stat().Transient {
 			continue
 		}
-
-		m.Connected(nil, c)
-		return
+		log.Debugw("new peer", "id", p.ShortString())
+		go m.streamOut(p)
+		return true
 	}
 
-	m.connect(p)
+	return false
 }
-
-func (m *Messenger) Connected(_ network.Network, c network.Conn) {
-	if c.Stat().Transient {
-		return
-	}
-
-	go m.streamOut(c.RemotePeer())
-}
-
-func (m *Messenger) Disconnected(_ network.Network, _ network.Conn) {}
-
-func (m *Messenger) Listen(_ network.Network, _ ma.Multiaddr) {}
-
-func (m *Messenger) ListenClose(_ network.Network, _ ma.Multiaddr) {}
-
-func (m *Messenger) OpenedStream(_ network.Network, _ network.Stream) {}
-
-func (m *Messenger) ClosedStream(_ network.Network, _ network.Stream) {}
