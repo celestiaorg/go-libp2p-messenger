@@ -2,6 +2,7 @@ package msngr
 
 import (
 	"context"
+	"errors"
 	"reflect"
 
 	logging "github.com/ipfs/go-log/v2"
@@ -15,10 +16,13 @@ import (
 
 var log = logging.Logger("msngr")
 
+// errClosed reports if messenger is closed.
+var errClosed = errors.New("msngr: closed")
+
 // Messenger provides a simple API to send messages to multiple peers.
 type Messenger struct {
-	host host.Host
-	pids []protocol.ID
+	host  host.Host
+	pids  []protocol.ID
 	msgTp reflect.Type
 
 	// fields below are used and protected in processIn
@@ -32,8 +36,8 @@ type Messenger struct {
 	newStreamsOut  chan inet.Stream
 	deadStreamsOut chan inet.Stream
 	streamsOut     map[peer.ID]map[inet.Stream]context.CancelFunc
-	peersOut  map[peer.ID]chan *msgWrap
-	peersReqs chan chan []peer.ID
+	peersOut       map[peer.ID]chan *msgWrap
+	peersReqs      chan chan []peer.ID
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -76,23 +80,20 @@ func (m *Messenger) Host() host.Host {
 	return m.host
 }
 
-// Send sends the given message 'out' to the 'peer' to.
-// The returned channel is always closed once the message is sent successfully or with an error.
+// Send optimistically sends the given message 'out' to the peer 'to'.
+// It errors in case the given ctx was closed or in case when Messenger is closed.
 // All messages are sent in a per peer queue, so the ordering of sent messages is guaranteed.
 // In case the Messenger is given with a RoutedHost, It tries to connect to the peer, if not connected.
-func (m *Messenger) Send(ctx context.Context, out serde.Message, to peer.ID) <-chan error {
-	msg := &msgWrap{
+func (m *Messenger) Send(ctx context.Context, out serde.Message, to peer.ID) error {
+	return m.send(ctx, &msgWrap{
 		Message: out,
 		to:      to,
-		done:    make(chan error, 1),
-	}
-	m.send(ctx, msg)
-	return msg.done
+	})
 }
 
 // Receive awaits for incoming messages from peers.
 // It receives messages sent through both Send and Broadcast.
-// Ti errors only if the given context 'ctx' is closed or when Messenger itself is close.
+// It errors only if the given context 'ctx' is closed or when Messenger is closed.
 func (m *Messenger) Receive(ctx context.Context) (serde.Message, peer.ID, error) {
 	select {
 	case msg := <-m.inbound:
@@ -100,21 +101,33 @@ func (m *Messenger) Receive(ctx context.Context) (serde.Message, peer.ID, error)
 	case <-ctx.Done():
 		return nil, "", ctx.Err()
 	case <-m.ctx.Done():
-		return nil, "", m.ctx.Err()
+		return nil, "", errClosed
 	}
 }
 
-// Broadcast sends the given message 'out' to each connected peer speaking the same protocol.
+// Broadcast optimistically sends the given message 'out' to each connected peer speaking *the same* protocol.
+// It returns a slice od peers to whom the message was sent and errors in case the given ctx was closed or
+// in case when Messenger is closed.
 // WARNING: It should be used deliberately. Avoid use cases requiring message propagation to a whole protocol network,
 //  not to flood the network with message duplicates. For such cases use libp2p.PubSub instead.
-func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) <-chan error {
-	msg := &msgWrap{
+func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) (peer.IDSlice, error) {
+	bcast := make(chan peer.IDSlice, 1)
+	err := m.send(ctx, &msgWrap{
 		Message: out,
-		bcast:   true,
-		done:    make(chan error, 1),
+		bcast:   bcast,
+	})
+	if err != nil {
+		return nil, err
 	}
-	m.send(ctx, msg)
-	return msg.done
+
+	select {
+	case peers := <-bcast:
+		return peers, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-m.ctx.Done():
+		return nil, errClosed
+	}
 }
 
 // Peers returns a list of connected/immediate peers speaking the protocol registered on the Messenger.
@@ -133,36 +146,27 @@ func (m *Messenger) Peers() []peer.ID {
 	}
 }
 
-// Close stop the Messenger and unregisters further protocol handling on the Host.
+// Close stops the Messenger and unregisters further protocol handling on the Host.
 func (m *Messenger) Close() error {
 	m.cancel()
 	m.deinit()
 	return nil
 }
 
-func (m *Messenger) send(ctx context.Context, msg *msgWrap) {
+func (m *Messenger) send(ctx context.Context, msg *msgWrap) error {
 	select {
 	case m.outbound <- msg:
+		return nil
 	case <-ctx.Done():
-		msg.Done(m.ctx.Err())
+		return ctx.Err()
 	case <-m.ctx.Done():
-		msg.Done(m.ctx.Err())
+		return errClosed
 	}
 }
 
 type msgWrap struct {
 	serde.Message
 
-	bcast    bool
 	from, to peer.ID
-	done     chan error
-}
-
-func (msg *msgWrap) Done(err error) {
-	if err != nil {
-		msg.done <- err
-	}
-	if !msg.bcast {
-		close(msg.done)
-	}
+	bcast    chan peer.IDSlice
 }

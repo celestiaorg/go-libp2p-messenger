@@ -47,8 +47,8 @@ func TestSend_PeersConnected(t *testing.T) {
 	require.NoError(t, err)
 
 	msgin := randPlainMessage(256)
-	done := min.Send(ctx, msgin, mnet.Peers()[1])
-	require.NoError(t, <-done)
+	err = min.Send(ctx, msgin, mnet.Peers()[1])
+	require.NoError(t, err)
 
 	msgout, from, err := mout.Receive(ctx)
 	require.NoError(t, err)
@@ -77,8 +77,8 @@ func TestSend_PeersDisconnected(t *testing.T) {
 	require.NoError(t, err)
 
 	msgin := randPlainMessage(256)
-	done := min.Send(ctx, msgin, mnet.Peers()[1])
-	require.NoError(t, <-done)
+	err = min.Send(ctx, msgin, mnet.Peers()[1])
+	require.NoError(t, err)
 
 	msgout, from, err := mout.Receive(ctx)
 	require.NoError(t, err)
@@ -196,8 +196,8 @@ func TestStreamDuplicates(t *testing.T) {
 	require.NoError(t, err)
 
 	msgout = randPlainMessage(256)
-	done := min.Send(ctx, msgout, hosts[1].ID())
-	require.NoError(t, <-done)
+	err = min.Send(ctx, msgout, hosts[1].ID())
+	require.NoError(t, err)
 
 	err = h("", sin)
 	require.NoError(t, err)
@@ -235,10 +235,10 @@ func TestSend_Events(t *testing.T) {
 	assert.Equal(t, evt.Peer, firstHst.ID())
 	assert.Equal(t, evt.Connectedness, network.Connected)
 
-	done := first.Send(ctx, randPlainMessage(256), secondHst.ID())
-	assert.NoError(t, <-done)
-	done = second.Send(ctx, randPlainMessage(256), firstHst.ID())
-	assert.NoError(t, <-done)
+	err = first.Send(ctx, randPlainMessage(256), secondHst.ID())
+	assert.NoError(t, err)
+	err = second.Send(ctx, randPlainMessage(256), firstHst.ID())
+	assert.NoError(t, err)
 
 	_, from, err := first.Receive(ctx)
 	assert.NoError(t, err)
@@ -278,7 +278,9 @@ func TestGroupBroadcast(t *testing.T) {
 
 	// do actual broadcasting
 	for _, m := range ms {
-		m.Broadcast(ctx, randPlainMessage(100))
+		peers, err := m.Broadcast(ctx, randPlainMessage(100))
+		require.NoError(t, err)
+		assert.Len(t, peers, netSize-1)
 	}
 
 	// actually check everyone received a message from everyone
@@ -310,7 +312,7 @@ func TestPeers(t *testing.T) {
 	}
 
 	// have to wait till everyone ready
-	time.Sleep(time.Millisecond*100)
+	time.Sleep(time.Millisecond * 100)
 
 	for _, m := range ms {
 		peers := m.Peers()

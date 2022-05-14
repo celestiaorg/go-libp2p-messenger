@@ -39,14 +39,8 @@ func (m *Messenger) processOut() {
 	for {
 		select {
 		case msg := <-m.outbound:
-			if msg.bcast {
-				for _, out := range m.peersOut {
-					select {
-					case out <- msg:
-					case <-m.ctx.Done():
-						return
-					}
-				}
+			if msg.bcast != nil {
+				m.broadcast(msg)
 				continue
 			}
 
@@ -157,7 +151,6 @@ func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan *msgW
 		select {
 		case msg := <-out: // out is not going to be closed, thus no 'ok' check
 			_, err := serde.Write(s, msg)
-			msg.Done(err)
 			if err != nil {
 				log.Errorw("writing message", "to", msg.to.ShortString(), "err", err)
 				s.Reset()
@@ -169,4 +162,17 @@ func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan *msgW
 			return
 		}
 	}
+}
+
+func (m *Messenger) broadcast(msg *msgWrap) {
+	sentTo := make(peer.IDSlice, 0, len(m.peersOut))
+	for id, out := range m.peersOut {
+		select {
+		case out <- msg:
+			sentTo = append(sentTo, id)
+		case <-m.ctx.Done():
+			return
+		}
+	}
+	msg.bcast <- sentTo // must never block
 }
