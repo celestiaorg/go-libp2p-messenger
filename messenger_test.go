@@ -312,7 +312,7 @@ func TestPeers(t *testing.T) {
 	}
 
 	// have to wait till everyone ready
-	time.Sleep(time.Millisecond*100)
+	time.Sleep(time.Millisecond * 100)
 
 	for _, m := range ms {
 		peers := m.Peers()

@@ -21,8 +21,8 @@ var errClosed = errors.New("msngr: closed")
 
 // Messenger provides a simple API to send messages to multiple peers.
 type Messenger struct {
-	host host.Host
-	pids []protocol.ID
+	host  host.Host
+	pids  []protocol.ID
 	msgTp reflect.Type
 
 	// fields below are used and protected in processIn
@@ -36,8 +36,8 @@ type Messenger struct {
 	newStreamsOut  chan inet.Stream
 	deadStreamsOut chan inet.Stream
 	streamsOut     map[peer.ID]map[inet.Stream]context.CancelFunc
-	peersOut  map[peer.ID]chan *msgWrap
-	peersReqs chan chan []peer.ID
+	peersOut       map[peer.ID]chan *msgWrap
+	peersReqs      chan chan []peer.ID
 
 	ctx    context.Context
 	cancel context.CancelFunc
