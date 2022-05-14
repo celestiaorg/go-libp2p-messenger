@@ -207,7 +207,7 @@ func TestSend_Events(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	mnet, err := mocknet.FullMeshLinked(3)
+	mnet, err := mocknet.FullMeshLinked(2)
 	require.NoError(t, err)
 
 	firstHst := mnet.Hosts()[0]
@@ -241,10 +241,10 @@ func TestSend_Events(t *testing.T) {
 	assert.NoError(t, <-done)
 
 	_, from, err := first.Receive(ctx)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, secondHst.ID(), from)
 	_, from, err = second.Receive(ctx)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, firstHst.ID(), from)
 
 	err = first.Close()
@@ -274,7 +274,7 @@ func TestGroupBroadcast(t *testing.T) {
 	}
 
 	// have to wait till everyone ready
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond*100)
 
 	// do actual broadcasting
 	for _, m := range ms {

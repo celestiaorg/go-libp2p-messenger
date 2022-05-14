@@ -57,8 +57,8 @@ func (m *Messenger) processOut() {
 			}
 
 			if len(m.streamsOut[msg.to]) == 0 {
-				// connect if there is no streams
-				// new connection will trigger new stream establishment
+				// connect if there is no stream
+				// new connection will trigger new stream
 				log.Debugw("connect", "to", msg.to.ShortString())
 				go m.connect(msg.to)
 			}
