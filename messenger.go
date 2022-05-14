@@ -76,18 +76,15 @@ func (m *Messenger) Host() host.Host {
 	return m.host
 }
 
-// Send sends the given message 'out' to the 'peer' to.
-// The returned channel is always closed once the message is sent successfully or with an error.
+// Send optimistically sends the given message 'out' to the peer 'to'.
+// It returns error only in case the given ctx was closed.
 // All messages are sent in a per peer queue, so the ordering of sent messages is guaranteed.
 // In case the Messenger is given with a RoutedHost, It tries to connect to the peer, if not connected.
-func (m *Messenger) Send(ctx context.Context, out serde.Message, to peer.ID) <-chan error {
-	msg := &msgWrap{
+func (m *Messenger) Send(ctx context.Context, out serde.Message, to peer.ID) error {
+	return m.send(ctx, &msgWrap{
 		Message: out,
 		to:      to,
-		done:    make(chan error, 1),
-	}
-	m.send(ctx, msg)
-	return msg.done
+	})
 }
 
 // Receive awaits for incoming messages from peers.
@@ -107,14 +104,11 @@ func (m *Messenger) Receive(ctx context.Context) (serde.Message, peer.ID, error)
 // Broadcast sends the given message 'out' to each connected peer speaking the same protocol.
 // WARNING: It should be used deliberately. Avoid use cases requiring message propagation to a whole protocol network,
 //  not to flood the network with message duplicates. For such cases use libp2p.PubSub instead.
-func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) <-chan error {
-	msg := &msgWrap{
+func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) error {
+	return m.send(ctx, &msgWrap{
 		Message: out,
 		bcast:   true,
-		done:    make(chan error, 1),
-	}
-	m.send(ctx, msg)
-	return msg.done
+	})
 }
 
 // Peers returns a list of connected/immediate peers speaking the protocol registered on the Messenger.
@@ -140,13 +134,14 @@ func (m *Messenger) Close() error {
 	return nil
 }
 
-func (m *Messenger) send(ctx context.Context, msg *msgWrap) {
+func (m *Messenger) send(ctx context.Context, msg *msgWrap) error {
 	select {
 	case m.outbound <- msg:
+		return nil
 	case <-ctx.Done():
-		msg.Done(m.ctx.Err())
+		return ctx.Err()
 	case <-m.ctx.Done():
-		msg.Done(m.ctx.Err())
+		return m.ctx.Err()
 	}
 }
 
@@ -155,14 +150,4 @@ type msgWrap struct {
 
 	bcast    bool
 	from, to peer.ID
-	done     chan error
-}
-
-func (msg *msgWrap) Done(err error) {
-	if err != nil {
-		msg.done <- err
-	}
-	if !msg.bcast {
-		close(msg.done)
-	}
 }

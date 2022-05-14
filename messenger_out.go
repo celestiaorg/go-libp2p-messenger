@@ -157,7 +157,6 @@ func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan *msgW
 		select {
 		case msg := <-out: // out is not going to be closed, thus no 'ok' check
 			_, err := serde.Write(s, msg)
-			msg.Done(err)
 			if err != nil {
 				log.Errorw("writing message", "to", msg.to.ShortString(), "err", err)
 				s.Reset()
