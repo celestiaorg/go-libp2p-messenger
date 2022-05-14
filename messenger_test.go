@@ -278,7 +278,9 @@ func TestGroupBroadcast(t *testing.T) {
 
 	// do actual broadcasting
 	for _, m := range ms {
-		m.Broadcast(ctx, randPlainMessage(100))
+		peers, err := m.Broadcast(ctx, randPlainMessage(100))
+		require.NoError(t, err)
+		assert.Len(t, peers, netSize-1)
 	}
 
 	// actually check everyone received a message from everyone
