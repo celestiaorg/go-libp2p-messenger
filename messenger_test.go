@@ -41,10 +41,10 @@ func TestSend_PeersConnected(t *testing.T) {
 	mnet, err := mocknet.FullMeshConnected(2)
 	require.NoError(t, err)
 
-	min, err := New(mnet.Hosts()[0], WithProtocols(tproto))
+	min, err := New[*PlainMessage](mnet.Hosts()[0], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	mout, err := New(mnet.Hosts()[1], WithProtocols(tproto))
+	mout, err := New[*PlainMessage](mnet.Hosts()[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
 	msgin := randPlainMessage(256, mnet.Peers()[1])
@@ -53,7 +53,7 @@ func TestSend_PeersConnected(t *testing.T) {
 
 	msgout, err := mout.Receive(ctx)
 	require.NoError(t, err)
-	assert.EqualValues(t, msgin.Data, msgout.(*PlainMessage).Data)
+	assert.EqualValues(t, msgin.Data, msgout.Data)
 	assert.Equal(t, mnet.Hosts()[0].ID(), msgout.From())
 
 	err = min.Close()
@@ -71,10 +71,10 @@ func TestSend_PeersDisconnected(t *testing.T) {
 	mnet, err := mocknet.FullMeshLinked(2)
 	require.NoError(t, err)
 
-	min, err := New(mnet.Hosts()[0], WithProtocols(tproto))
+	min, err := New[*PlainMessage](mnet.Hosts()[0], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	mout, err := New(mnet.Hosts()[1], WithProtocols(tproto))
+	mout, err := New[*PlainMessage](mnet.Hosts()[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
 	msgin := randPlainMessage(256, mnet.Peers()[1])
@@ -83,7 +83,7 @@ func TestSend_PeersDisconnected(t *testing.T) {
 
 	msgout, err := mout.Receive(ctx)
 	require.NoError(t, err)
-	assert.EqualValues(t, msgin.Data, msgout.(*PlainMessage).Data)
+	assert.EqualValues(t, msgin.Data, msgout.Data)
 	assert.Equal(t, mnet.Hosts()[0].ID(), msgout.From())
 
 	err = min.Close()
@@ -98,10 +98,10 @@ func TestReconnect(t *testing.T) {
 
 	hosts := realTransportHosts(t, 2)
 
-	min, err := New(hosts[0], WithProtocols(tproto))
+	min, err := New[*PlainMessage](hosts[0], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	mout, err := New(hosts[1], WithProtocols(tproto))
+	mout, err := New[*PlainMessage](hosts[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
 	err = hosts[0].Connect(ctx, *host.InfoFromHost(hosts[1]))
@@ -135,10 +135,10 @@ func TestStreamDuplicates(t *testing.T) {
 
 	hosts := realTransportHosts(t, 2)
 
-	min, err := New(hosts[0], WithProtocols(tproto))
+	min, err := New[*PlainMessage](hosts[0], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	_, err = New(hosts[1], WithProtocols(tproto))
+	_, err = New[*PlainMessage](hosts[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
 	err = hosts[0].Connect(ctx, *host.InfoFromHost(hosts[1]))
@@ -179,7 +179,7 @@ func TestStreamDuplicates(t *testing.T) {
 	msgin, err := min.Receive(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, hosts[1].ID(), msgin.From())
-	assert.Equal(t, msgout.Data, msgin.(*PlainMessage).Data)
+	assert.Equal(t, msgout.Data, msgin.Data)
 
 	// // check receiving on duplicate
 	sin, err := conn.AcceptStream()
@@ -189,7 +189,7 @@ func TestStreamDuplicates(t *testing.T) {
 	ms.AddHandler(string(tproto), func(protocol string, rwc io.ReadWriteCloser) error {
 		_, err = serde.Read(rwc, msgin)
 		require.NoError(t, err)
-		assert.Equal(t, msgout.Data, msgin.(*PlainMessage).Data)
+		assert.Equal(t, msgout.Data, msgin.Data)
 		return nil
 	})
 
@@ -215,14 +215,14 @@ func TestSend_Events(t *testing.T) {
 	firstSub, err := firstHst.EventBus().Subscribe(&event.EvtPeerConnectednessChanged{})
 	require.NoError(t, err)
 
-	first, err := New(mnet.Hosts()[0], WithProtocols(tproto))
+	first, err := New[*PlainMessage](mnet.Hosts()[0], WithProtocols(tproto))
 	require.NoError(t, err)
 
 	secondHst := mnet.Hosts()[1]
 	secondSub, err := secondHst.EventBus().Subscribe(&event.EvtPeerConnectednessChanged{})
 	require.NoError(t, err)
 
-	second, err := New(mnet.Hosts()[1], WithProtocols(tproto))
+	second, err := New[*PlainMessage](mnet.Hosts()[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
 	_, err = mnet.ConnectPeers(mnet.Peers()[0], mnet.Peers()[1])
@@ -268,9 +268,9 @@ func TestGroupBroadcast(t *testing.T) {
 	require.NoError(t, err)
 
 	// create messengers according to netSize
-	ms := make([]*Messenger, netSize)
+	ms := make([]*Messenger[*PlainMessage], netSize)
 	for i, h := range mnet.Hosts() {
-		ms[i], err = New(h, WithProtocols(tproto))
+		ms[i], err = New[*PlainMessage](h, WithProtocols(tproto))
 		require.NoError(t, err)
 	}
 
@@ -309,9 +309,9 @@ func TestPeers(t *testing.T) {
 	require.NoError(t, err)
 
 	// create messengers according to netSize
-	ms := make([]*Messenger, netSize)
+	ms := make([]*Messenger[*PlainMessage], netSize)
 	for i, h := range mnet.Hosts() {
-		ms[i], err = New(h, WithProtocols(tproto))
+		ms[i], err = New[*PlainMessage](h, WithProtocols(tproto))
 		require.NoError(t, err)
 	}
 

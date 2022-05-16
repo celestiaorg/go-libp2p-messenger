@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"reflect"
 
 	inet "github.com/libp2p/go-libp2p/core/network"
 
@@ -13,7 +12,7 @@ import (
 )
 
 // streamIn handles inbound streams from StreamHandler registered on the Host.
-func (m *Messenger) streamIn(s inet.Stream) {
+func (m *Messenger[M]) streamIn(s inet.Stream) {
 	select {
 	case m.newStreamsIn <- s:
 	case <-m.ctx.Done():
@@ -22,7 +21,7 @@ func (m *Messenger) streamIn(s inet.Stream) {
 }
 
 // processIn means processing everything related inbound data.
-func (m *Messenger) processIn() {
+func (m *Messenger[M]) processIn() {
 	defer func() {
 		for p := range m.streamsIn {
 			delete(m.streamsIn, p)
@@ -58,14 +57,14 @@ func (m *Messenger) processIn() {
 }
 
 // msgsIn handles an inbound peer stream lifecycle and reads msgs from it handing them to inbound chan.
-func (m *Messenger) msgsIn(ctx context.Context, s inet.Stream) {
+func (m *Messenger[M]) msgsIn(ctx context.Context, s inet.Stream) {
 	defer s.Close()
 	r := bufio.NewReader(s)
 
 	from, to := s.Conn().RemotePeer(), s.Conn().LocalPeer()
-	msg := reflect.New(m.msgTp).Interface().(Message)
+	var tp M
 	for {
-		msg = msg.New(from, to)
+		msg := tp.New(from, to).(M)
 		_, err := serde.Read(r, msg)
 		if err != nil {
 			select {

@@ -6,7 +6,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-func (m *Messenger) init() {
+func (m *Messenger[M]) init() {
 	for _, pid := range m.pids {
 		m.host.SetStreamHandler(pid, m.streamIn)
 	}
@@ -41,14 +41,14 @@ func (m *Messenger) init() {
 	}()
 }
 
-func (m *Messenger) deinit() {
+func (m *Messenger[M]) deinit() {
 	for _, pid := range m.pids {
 		m.host.RemoveStreamHandler(pid)
 	}
 }
 
 // connect tries to connect to the given peer
-func (m *Messenger) connect(p peer.ID) {
+func (m *Messenger[M]) connect(p peer.ID) {
 	// TODO: Retry with backoff several times and clean up outbound channel if no success connecting
 
 	// assuming Host is wrapped with RoutedHost
@@ -59,7 +59,7 @@ func (m *Messenger) connect(p peer.ID) {
 }
 
 // reconnect initiates new connection to the peer if not connected
-func (m *Messenger) reconnect(p peer.ID) {
+func (m *Messenger[M]) reconnect(p peer.ID) {
 	if m.connected(p) {
 		return
 	}
@@ -68,7 +68,7 @@ func (m *Messenger) reconnect(p peer.ID) {
 
 // connected reports if there is at least one stable(non-transient) connection to the given peer
 // and creates one stream to the peer if so.
-func (m *Messenger) connected(p peer.ID) bool {
+func (m *Messenger[M]) connected(p peer.ID) bool {
 	for _, c := range m.host.Network().ConnsToPeer(p) {
 		if c.Stat().Transient {
 			continue
