@@ -10,7 +10,7 @@ import (
 )
 
 // streamOut stands for outbound streams creation.
-func (m *Messenger) streamOut(p peer.ID) {
+func (m *Messenger[M]) streamOut(p peer.ID) {
 	s, err := m.host.NewStream(m.ctx, p, m.pids...)
 	if err != nil {
 		// it is a normal case when a peer does not speak the same protocol while we connected to him
@@ -26,7 +26,7 @@ func (m *Messenger) streamOut(p peer.ID) {
 }
 
 // processOut means processing everything related to outbound data.
-func (m *Messenger) processOut() {
+func (m *Messenger[M]) processOut() {
 	defer func() {
 		for p := range m.streamsOut {
 			delete(m.streamsOut, p)
@@ -58,7 +58,7 @@ func (m *Messenger) processOut() {
 			to := msg.To()
 			out, ok := m.peersOut[to]
 			if !ok {
-				out = make(chan Message, 32)
+				out = make(chan M, 32)
 				m.peersOut[to] = out
 			}
 
@@ -72,7 +72,7 @@ func (m *Messenger) processOut() {
 			select {
 			case out <- msg:
 			default:
-				log.Warnw("dropped msg - full buffer", "to", to.ShortString())
+				log.Warnw("dropped message - full buffer", "to", to.ShortString())
 			}
 		case s := <-m.newStreamsOut:
 			p := s.Conn().RemotePeer()
@@ -94,7 +94,7 @@ func (m *Messenger) processOut() {
 
 			out, ok := m.peersOut[p]
 			if !ok {
-				out = make(chan Message, 32)
+				out = make(chan M, 32)
 				m.peersOut[p] = out
 			}
 
@@ -139,7 +139,7 @@ func (m *Messenger) processOut() {
 }
 
 // msgsOut handles outbound peer stream lifecycle and writes outgoing messages handed from processOut
-func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan Message) {
+func (m *Messenger[M]) msgsOut(ctx context.Context, s inet.Stream, out <-chan M) {
 	closed := make(chan struct{})
 	go func() {
 		// a valid trick to check if stream is closed/reset
