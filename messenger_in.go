@@ -13,7 +13,7 @@ import (
 )
 
 // streamIn handles inbound streams from StreamHandler registered on the Host.
-func (m *Messenger) streamIn(s inet.Stream) {
+func (m *Messenger[M]) streamIn(s inet.Stream) {
 	select {
 	case m.newStreamsIn <- s:
 	case <-m.ctx.Done():
@@ -22,7 +22,7 @@ func (m *Messenger) streamIn(s inet.Stream) {
 }
 
 // processIn means processing everything related inbound data.
-func (m *Messenger) processIn() {
+func (m *Messenger[M]) processIn() {
 	defer func() {
 		for p := range m.streamsIn {
 			delete(m.streamsIn, p)
@@ -58,18 +58,18 @@ func (m *Messenger) processIn() {
 }
 
 // msgsIn handles an inbound peer stream lifecycle and reads msgs from it handing them to inbound chan.
-func (m *Messenger) msgsIn(ctx context.Context, s inet.Stream) {
+func (m *Messenger[M]) msgsIn(ctx context.Context, s inet.Stream) {
 	defer s.Close()
 	r := bufio.NewReader(s)
 
 	from := s.Conn().RemotePeer()
-	var msg *msgWrap
+	var msg *message[M]
 	for {
-		msg = &msgWrap{
-			Message: reflect.New(m.msgTp).Interface().(serde.Message),
-			from:    from,
+		msg = &message[M]{
+			msg:  m.newMessage(),
+			from: from,
 		}
-		_, err := serde.Read(r, msg.Message)
+		_, err := serde.Read(r, msg.msg)
 		if err != nil {
 			select {
 			case m.deadStreamsIn <- s:
@@ -93,4 +93,11 @@ func (m *Messenger) msgsIn(ctx context.Context, s inet.Stream) {
 			log.Warnw("message dropped (slow Receive reader)", "from", from.ShortString())
 		}
 	}
+}
+
+func (m *Messenger[M]) newMessage() M {
+	// TODO: There is no way to avoid reflection until type inference is enabled
+	//  See: https://github.com/golang/go/issues/51527
+	// 	There is no specific plans on when this will be enabled
+	return (reflect.New(reflect.TypeOf(new(M)).Elem().Elem()).Interface()).(M)
 }
