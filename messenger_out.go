@@ -3,8 +3,8 @@ package msngr
 import (
 	"context"
 
-	inet "github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
+	inet "github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/celestiaorg/go-libp2p-messenger/serde"
 )
