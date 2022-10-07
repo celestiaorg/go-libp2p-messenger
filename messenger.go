@@ -105,11 +105,12 @@ func (m *Messenger) Receive(ctx context.Context) (serde.Message, peer.ID, error)
 	}
 }
 
-// Broadcast optimistically sends the given message 'out' to each connected peer speaking *the same* protocol.
-// It returns a slice od peers to whom the message was sent and errors in case the given ctx was closed or
-// in case when Messenger is closed.
-// WARNING: It should be used deliberately. Avoid use cases requiring message propagation to a whole protocol network,
-//  not to flood the network with message duplicates. For such cases use libp2p.PubSub instead.
+// Broadcast optimistically sends the given message 'out' to each connected peer
+// speaking *the same* protocol. It returns a slice of peers to whom the message
+// was sent and errors in case the given ctx was closed or in case when
+// Messenger is closed. WARNING: It should be used deliberately. Avoid use cases
+// requiring message propagation to a whole protocol network, not to flood the
+// network with message duplicates. For such cases use libp2p.PubSub instead.
 func (m *Messenger) Broadcast(ctx context.Context, out serde.Message) (peer.IDSlice, error) {
 	bcast := make(chan peer.IDSlice, 1)
 	err := m.send(ctx, &msgWrap{
