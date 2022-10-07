@@ -7,7 +7,7 @@ import (
 	"io"
 	"reflect"
 
-	inet "github.com/libp2p/go-libp2p-core/network"
+	inet "github.com/libp2p/go-libp2p/core/network"
 
 	"github.com/celestiaorg/go-libp2p-messenger/serde"
 )
