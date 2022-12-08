@@ -147,7 +147,7 @@ func TestStreamDuplicates(t *testing.T) {
 	// wait some time
 	time.Sleep(time.Millisecond * 100)
 
-	tcp, err := tcp.NewTCPTransport(swarmt.GenUpgrader(t, hosts[1].Network().(*swarm.Swarm)), nil)
+	tcp, err := tcp.NewTCPTransport(swarmt.GenUpgrader(t, hosts[1].Network().(*swarm.Swarm), nil), nil)
 	require.NoError(t, err)
 
 	var addr multiaddr.Multiaddr
@@ -264,7 +264,7 @@ func TestGroupBroadcast(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	mnet, err := mocknet.FullMeshConnected(netSize)
+	mnet, err := mocknet.FullMeshLinked(netSize)
 	require.NoError(t, err)
 
 	// create messengers according to netSize
@@ -273,6 +273,9 @@ func TestGroupBroadcast(t *testing.T) {
 		ms[i], err = New[*PlainMessage](h, WithProtocols(tproto))
 		require.NoError(t, err)
 	}
+
+	err = mnet.ConnectAllButSelf()
+	require.NoError(t, err)
 
 	// have to wait till everyone ready
 	time.Sleep(time.Millisecond * 100)
@@ -291,9 +294,6 @@ func TestGroupBroadcast(t *testing.T) {
 			assert.NoError(t, err)
 		}
 	}
-
-	// have to wait till everyone received
-	time.Sleep(time.Millisecond * 100)
 
 	// be nice and close
 	for _, m := range ms {
