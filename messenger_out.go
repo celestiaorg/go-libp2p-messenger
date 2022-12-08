@@ -38,29 +38,41 @@ func (m *Messenger) processOut() {
 
 	for {
 		select {
+		case msg := <-m.broadcast:
+			sentTo := make(peer.IDSlice, 0, len(m.peersOut))
+			for id, out := range m.peersOut {
+				select {
+				case out <- msg:
+					sentTo = append(sentTo, id)
+				case <-m.ctx.Done():
+					return
+				}
+			}
+
+			select {
+			case m.broadcastPeers <- sentTo:
+			case <-m.ctx.Done():
+				return
+			}
 		case msg := <-m.outbound:
-			if msg.bcast != nil {
-				m.broadcast(msg)
-				continue
-			}
-
-			out, ok := m.peersOut[msg.to]
+			to := msg.To()
+			out, ok := m.peersOut[to]
 			if !ok {
-				out = make(chan *msgWrap, 32)
-				m.peersOut[msg.to] = out
+				out = make(chan Message, 32)
+				m.peersOut[to] = out
 			}
 
-			if len(m.streamsOut[msg.to]) == 0 {
+			if len(m.streamsOut[to]) == 0 {
 				// connect if there is no stream
 				// new connection will trigger new stream
-				log.Debugw("connect", "to", msg.to.ShortString())
-				go m.connect(msg.to)
+				log.Debugw("connect", "to", to.ShortString())
+				go m.connect(to)
 			}
 
 			select {
 			case out <- msg:
 			default:
-				log.Warnw("dropped msg - full buffer", "to", msg.to.ShortString())
+				log.Warnw("dropped msg - full buffer", "to", to.ShortString())
 			}
 		case s := <-m.newStreamsOut:
 			p := s.Conn().RemotePeer()
@@ -82,7 +94,7 @@ func (m *Messenger) processOut() {
 
 			out, ok := m.peersOut[p]
 			if !ok {
-				out = make(chan *msgWrap, 32)
+				out = make(chan Message, 32)
 				m.peersOut[p] = out
 			}
 
@@ -127,7 +139,7 @@ func (m *Messenger) processOut() {
 }
 
 // msgsOut handles outbound peer stream lifecycle and writes outgoing messages handed from processOut
-func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan *msgWrap) {
+func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan Message) {
 	closed := make(chan struct{})
 	go func() {
 		// a valid trick to check if stream is closed/reset
@@ -152,7 +164,7 @@ func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan *msgW
 		case msg := <-out: // out is not going to be closed, thus no 'ok' check
 			_, err := serde.Write(s, msg)
 			if err != nil {
-				log.Errorw("writing message", "to", msg.to.ShortString(), "err", err)
+				log.Errorw("writing message", "to", msg.To().ShortString(), "err", err)
 				s.Reset()
 				return
 			}
@@ -162,17 +174,4 @@ func (m *Messenger) msgsOut(ctx context.Context, s inet.Stream, out <-chan *msgW
 			return
 		}
 	}
-}
-
-func (m *Messenger) broadcast(msg *msgWrap) {
-	sentTo := make(peer.IDSlice, 0, len(m.peersOut))
-	for id, out := range m.peersOut {
-		select {
-		case out <- msg:
-			sentTo = append(sentTo, id)
-		case <-m.ctx.Done():
-			return
-		}
-	}
-	msg.bcast <- sentTo // must never block
 }
