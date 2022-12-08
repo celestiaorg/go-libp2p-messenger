@@ -28,7 +28,7 @@ func (m *Messenger) init() {
 				switch cevt.Connectedness {
 				case network.Connected:
 					m.connected(cevt.Peer)
-				// we don't care about NotConnected case, as it is handled by observing stream being reset
+					// we don't care about NotConnected case, as it is handled by observing stream being reset
 				}
 			case <-m.ctx.Done():
 				err := sub.Close()

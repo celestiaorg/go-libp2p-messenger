@@ -10,6 +10,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/blank"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
@@ -46,14 +47,14 @@ func TestSend_PeersConnected(t *testing.T) {
 	mout, err := New(mnet.Hosts()[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	msgin := randPlainMessage(256)
-	err = min.Send(ctx, msgin, mnet.Peers()[1])
+	msgin := randPlainMessage(256, mnet.Peers()[1])
+	err = min.Send(ctx, msgin)
 	require.NoError(t, err)
 
-	msgout, from, err := mout.Receive(ctx)
+	msgout, err := mout.Receive(ctx)
 	require.NoError(t, err)
-	assert.EqualValues(t, msgin, msgout)
-	assert.Equal(t, mnet.Hosts()[0].ID(), from)
+	assert.EqualValues(t, msgin.Data, msgout.(*PlainMessage).Data)
+	assert.Equal(t, mnet.Hosts()[0].ID(), msgout.From())
 
 	err = min.Close()
 	require.NoError(t, err)
@@ -70,20 +71,20 @@ func TestSend_PeersDisconnected(t *testing.T) {
 	mnet, err := mocknet.FullMeshLinked(2)
 	require.NoError(t, err)
 
-	min, err := New(mnet.Hosts()[0], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	min, err := New(mnet.Hosts()[0], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	mout, err := New(mnet.Hosts()[1], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	mout, err := New(mnet.Hosts()[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	msgin := randPlainMessage(256)
-	err = min.Send(ctx, msgin, mnet.Peers()[1])
+	msgin := randPlainMessage(256, mnet.Peers()[1])
+	err = min.Send(ctx, msgin)
 	require.NoError(t, err)
 
-	msgout, from, err := mout.Receive(ctx)
+	msgout, err := mout.Receive(ctx)
 	require.NoError(t, err)
-	assert.EqualValues(t, msgin, msgout)
-	assert.Equal(t, mnet.Hosts()[0].ID(), from)
+	assert.EqualValues(t, msgin.Data, msgout.(*PlainMessage).Data)
+	assert.Equal(t, mnet.Hosts()[0].ID(), msgout.From())
 
 	err = min.Close()
 	require.NoError(t, err)
@@ -97,10 +98,10 @@ func TestReconnect(t *testing.T) {
 
 	hosts := realTransportHosts(t, 2)
 
-	min, err := New(hosts[0], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	min, err := New(hosts[0], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	mout, err := New(hosts[1], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	mout, err := New(hosts[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
 	err = hosts[0].Connect(ctx, *host.InfoFromHost(hosts[1]))
@@ -115,12 +116,12 @@ func TestReconnect(t *testing.T) {
 				err = hosts[0].Network().ClosePeer(hosts[1].ID())
 				require.NoError(t, err)
 			}
-			min.Send(ctx, randPlainMessage(256), hosts[1].ID())
+			min.Send(ctx, randPlainMessage(256, hosts[1].ID()))
 		}
 	}()
 
 	for i := range make([]int, 9) {
-		_, _, err := mout.Receive(ctx)
+		_, err := mout.Receive(ctx)
 		if !assert.NoError(t, err) {
 			t.Log(i)
 			return
@@ -134,10 +135,10 @@ func TestStreamDuplicates(t *testing.T) {
 
 	hosts := realTransportHosts(t, 2)
 
-	min, err := New(hosts[0], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	min, err := New(hosts[0], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	_, err = New(hosts[1], WithProtocols(tproto), WithMessageType(&serde.PlainMessage{}))
+	_, err = New(hosts[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
 	err = hosts[0].Connect(ctx, *host.InfoFromHost(hosts[1]))
@@ -171,14 +172,14 @@ func TestStreamDuplicates(t *testing.T) {
 	err = multistream.SelectProtoOrFail(string(tproto), out)
 	require.NoError(t, err)
 
-	msgout := randPlainMessage(256)
+	msgout := randPlainMessage(256, "")
 	_, err = serde.Write(out, msgout)
 	require.NoError(t, err)
 
-	msgin, from, err := min.Receive(ctx)
+	msgin, err := min.Receive(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, hosts[1].ID(), from)
-	assert.Equal(t, msgout.Data, msgin.(*serde.PlainMessage).Data)
+	assert.Equal(t, hosts[1].ID(), msgin.From())
+	assert.Equal(t, msgout.Data, msgin.(*PlainMessage).Data)
 
 	// // check receiving on duplicate
 	sin, err := conn.AcceptStream()
@@ -188,15 +189,15 @@ func TestStreamDuplicates(t *testing.T) {
 	ms.AddHandler(string(tproto), func(protocol string, rwc io.ReadWriteCloser) error {
 		_, err = serde.Read(rwc, msgin)
 		require.NoError(t, err)
-		assert.Equal(t, msgout.Data, msgin.(*serde.PlainMessage).Data)
+		assert.Equal(t, msgout.Data, msgin.(*PlainMessage).Data)
 		return nil
 	})
 
 	_, h, err := ms.Negotiate(sin)
 	require.NoError(t, err)
 
-	msgout = randPlainMessage(256)
-	err = min.Send(ctx, msgout, hosts[1].ID())
+	msgout = randPlainMessage(256, hosts[1].ID())
+	err = min.Send(ctx, msgout)
 	require.NoError(t, err)
 
 	err = h("", sin)
@@ -235,17 +236,17 @@ func TestSend_Events(t *testing.T) {
 	assert.Equal(t, evt.Peer, firstHst.ID())
 	assert.Equal(t, evt.Connectedness, network.Connected)
 
-	err = first.Send(ctx, randPlainMessage(256), secondHst.ID())
+	err = first.Send(ctx, randPlainMessage(256, secondHst.ID()))
 	assert.NoError(t, err)
-	err = second.Send(ctx, randPlainMessage(256), firstHst.ID())
+	err = second.Send(ctx, randPlainMessage(256, firstHst.ID()))
 	assert.NoError(t, err)
 
-	_, from, err := first.Receive(ctx)
+	msgout, err := first.Receive(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, secondHst.ID(), from)
-	_, from, err = second.Receive(ctx)
+	assert.Equal(t, secondHst.ID(), msgout.From())
+	msgout, err = second.Receive(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, firstHst.ID(), from)
+	assert.Equal(t, firstHst.ID(), msgout.From())
 
 	err = first.Close()
 	require.NoError(t, err)
@@ -274,11 +275,11 @@ func TestGroupBroadcast(t *testing.T) {
 	}
 
 	// have to wait till everyone ready
-	time.Sleep(time.Millisecond*100)
+	time.Sleep(time.Millisecond * 100)
 
 	// do actual broadcasting
 	for _, m := range ms {
-		peers, err := m.Broadcast(ctx, randPlainMessage(100))
+		peers, err := m.Broadcast(ctx, randPlainMessage(100, ""))
 		require.NoError(t, err)
 		assert.Len(t, peers, netSize-1)
 	}
@@ -286,10 +287,13 @@ func TestGroupBroadcast(t *testing.T) {
 	// actually check everyone received a message from everyone
 	for _, m := range ms {
 		for range ms[1:] {
-			_, _, err := m.Receive(ctx) // we don't really care about the content, rather about the fact of receival
+			_, err := m.Receive(ctx) // we don't really care about the content, rather about the fact of receival
 			assert.NoError(t, err)
 		}
 	}
+
+	// have to wait till everyone received
+	time.Sleep(time.Millisecond * 100)
 
 	// be nice and close
 	for _, m := range ms {
@@ -301,7 +305,7 @@ func TestGroupBroadcast(t *testing.T) {
 func TestPeers(t *testing.T) {
 	const netSize = 4
 
-	mnet, err := mocknet.FullMeshConnected(netSize)
+	mnet, err := mocknet.FullMeshLinked(netSize)
 	require.NoError(t, err)
 
 	// create messengers according to netSize
@@ -310,6 +314,9 @@ func TestPeers(t *testing.T) {
 		ms[i], err = New(h, WithProtocols(tproto))
 		require.NoError(t, err)
 	}
+
+	err = mnet.ConnectAllButSelf()
+	require.NoError(t, err)
 
 	// have to wait till everyone ready
 	time.Sleep(time.Millisecond * 100)
@@ -320,8 +327,10 @@ func TestPeers(t *testing.T) {
 	}
 }
 
-func randPlainMessage(size int) *serde.PlainMessage {
-	msg := &serde.PlainMessage{Data: make([]byte, size)}
+func randPlainMessage(size int, to peer.ID) *PlainMessage {
+	msg := &PlainMessage{}
+	msg.Data = make([]byte, size)
+	msg.to = to
 	rand.Read(msg.Data)
 	return msg
 }

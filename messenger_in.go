@@ -62,14 +62,11 @@ func (m *Messenger) msgsIn(ctx context.Context, s inet.Stream) {
 	defer s.Close()
 	r := bufio.NewReader(s)
 
-	from := s.Conn().RemotePeer()
-	var msg *msgWrap
+	from, to := s.Conn().RemotePeer(), s.Conn().LocalPeer()
+	msg := reflect.New(m.msgTp).Interface().(Message)
 	for {
-		msg = &msgWrap{
-			Message: reflect.New(m.msgTp).Interface().(serde.Message),
-			from:    from,
-		}
-		_, err := serde.Read(r, msg.Message)
+		msg = msg.New(from, to)
+		_, err := serde.Read(r, msg)
 		if err != nil {
 			select {
 			case m.deadStreamsIn <- s:
