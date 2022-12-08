@@ -2,7 +2,6 @@ package msngr
 
 import (
 	"context"
-	"io"
 	"math/rand"
 	"testing"
 	"time"
@@ -14,15 +13,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/blank"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
-	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 	swarmt "github.com/libp2p/go-libp2p/p2p/net/swarm/testing"
-	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
-	"github.com/multiformats/go-multiaddr"
-	"github.com/multiformats/go-multistream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/celestiaorg/go-libp2p-messenger/serde"
 )
 
 const tproto protocol.ID = "/test"
@@ -138,69 +131,30 @@ func TestStreamDuplicates(t *testing.T) {
 	min, err := New[*PlainMessage](hosts[0], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	_, err = New[*PlainMessage](hosts[1], WithProtocols(tproto))
+	mout, err := New[*PlainMessage](hosts[1], WithProtocols(tproto))
 	require.NoError(t, err)
 
-	err = hosts[0].Connect(ctx, *host.InfoFromHost(hosts[1]))
+	err = min.Host().Connect(ctx, *host.InfoFromHost(mout.Host()))
 	require.NoError(t, err)
 
 	// wait some time
 	time.Sleep(time.Millisecond * 100)
 
-	tcp, err := tcp.NewTCPTransport(swarmt.GenUpgrader(t, hosts[1].Network().(*swarm.Swarm), nil), nil)
+	ein, err := min.Host().EventBus().Emitter(&event.EvtPeerConnectednessChanged{})
 	require.NoError(t, err)
 
-	var addr multiaddr.Multiaddr
-	for _, a := range hosts[0].Addrs() {
-		ps := a.Protocols()
-		if ps[len(ps)-1].Code == multiaddr.P_TCP {
-			addr = a
-			break
-		}
-	}
-
-	err = hosts[0].Network().ClosePeer(hosts[1].ID())
+	eout, err := mout.Host().EventBus().Emitter(&event.EvtPeerConnectednessChanged{})
 	require.NoError(t, err)
 
-	conn, err := tcp.Dial(ctx, addr, hosts[0].ID())
-	require.NoError(t, err)
+	// fake connectedness event, which starts a new stream
+	ein.Emit(event.EvtPeerConnectednessChanged{Peer: min.Host().ID(), Connectedness: network.Connected})
+	eout.Emit(event.EvtPeerConnectednessChanged{Peer: mout.Host().ID(), Connectedness: network.Connected})
 
-	// check sending on duplicate
-	out, err := conn.OpenStream(ctx)
-	require.NoError(t, err)
-
-	err = multistream.SelectProtoOrFail(string(tproto), out)
-	require.NoError(t, err)
-
-	msgout := randPlainMessage(256, "")
-	_, err = serde.Write(out, msgout)
-	require.NoError(t, err)
-
-	msgin, err := min.Receive(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, hosts[1].ID(), msgin.From())
-	assert.Equal(t, msgout.Data, msgin.Data)
-
-	// // check receiving on duplicate
-	sin, err := conn.AcceptStream()
-	require.NoError(t, err)
-
-	ms := multistream.NewMultistreamMuxer()
-	ms.AddHandler(string(tproto), func(protocol string, rwc io.ReadWriteCloser) error {
-		_, err = serde.Read(rwc, msgin)
-		require.NoError(t, err)
-		assert.Equal(t, msgout.Data, msgin.Data)
-		return nil
-	})
-
-	_, h, err := ms.Negotiate(sin)
-	require.NoError(t, err)
-
-	msgout = randPlainMessage(256, hosts[1].ID())
+	msgout := randPlainMessage(256, mout.Host().ID())
 	err = min.Send(ctx, msgout)
 	require.NoError(t, err)
 
-	err = h("", sin)
+	_, err = mout.Receive(ctx)
 	require.NoError(t, err)
 }
 
