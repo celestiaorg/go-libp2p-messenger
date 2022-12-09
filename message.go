@@ -5,32 +5,16 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+// Message is a contract that any user defined message has to satisfy to be sent via Messenger.
 type Message interface {
 	serde.Message
-
-	To() peer.ID
+	// From points to peer the Message was received from.
 	From() peer.ID
-
-	New(from, to peer.ID) Message
+	// To points to Messenger the peer to send the Message to.
+	To() peer.ID
 }
 
-type PlainMessage struct {
-	serde.PlainMessage
-
-	from, to peer.ID
-}
-
-func (p *PlainMessage) To() peer.ID {
-	return p.to
-}
-
-func (p *PlainMessage) From() peer.ID {
-	return p.from
-}
-
-func (p *PlainMessage) New(from, to peer.ID) Message {
-	return &PlainMessage{
-		from: from,
-		to:   to,
-	}
-}
+// NewMessageFn is a type-parameterized constructor func for Message.
+// It is required by Messenger, s.t. it can instantiate user-defined messages
+// coming from the network.
+type NewMessageFn[M Message] func(from, to peer.ID) M

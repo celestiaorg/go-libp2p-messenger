@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/celestiaorg/go-libp2p-messenger/serde"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -34,10 +35,10 @@ func TestSend_PeersConnected(t *testing.T) {
 	mnet, err := mocknet.FullMeshConnected(2)
 	require.NoError(t, err)
 
-	min, err := New[*PlainMessage](mnet.Hosts()[0], WithProtocols(tproto))
+	min, err := New[*plainMessage](mnet.Hosts()[0], newPlainMessage, WithProtocols(tproto))
 	require.NoError(t, err)
 
-	mout, err := New[*PlainMessage](mnet.Hosts()[1], WithProtocols(tproto))
+	mout, err := New[*plainMessage](mnet.Hosts()[1], newPlainMessage, WithProtocols(tproto))
 	require.NoError(t, err)
 
 	msgin := randPlainMessage(256, mnet.Peers()[1])
@@ -64,10 +65,10 @@ func TestSend_PeersDisconnected(t *testing.T) {
 	mnet, err := mocknet.FullMeshLinked(2)
 	require.NoError(t, err)
 
-	min, err := New[*PlainMessage](mnet.Hosts()[0], WithProtocols(tproto))
+	min, err := New[*plainMessage](mnet.Hosts()[0], newPlainMessage, WithProtocols(tproto))
 	require.NoError(t, err)
 
-	mout, err := New[*PlainMessage](mnet.Hosts()[1], WithProtocols(tproto))
+	mout, err := New[*plainMessage](mnet.Hosts()[1], newPlainMessage, WithProtocols(tproto))
 	require.NoError(t, err)
 
 	msgin := randPlainMessage(256, mnet.Peers()[1])
@@ -91,10 +92,10 @@ func TestReconnect(t *testing.T) {
 
 	hosts := realTransportHosts(t, 2)
 
-	min, err := New[*PlainMessage](hosts[0], WithProtocols(tproto))
+	min, err := New[*plainMessage](hosts[0], newPlainMessage, WithProtocols(tproto))
 	require.NoError(t, err)
 
-	mout, err := New[*PlainMessage](hosts[1], WithProtocols(tproto))
+	mout, err := New[*plainMessage](hosts[1], newPlainMessage, WithProtocols(tproto))
 	require.NoError(t, err)
 
 	err = hosts[0].Connect(ctx, *host.InfoFromHost(hosts[1]))
@@ -128,10 +129,10 @@ func TestStreamDuplicates(t *testing.T) {
 
 	hosts := realTransportHosts(t, 2)
 
-	min, err := New[*PlainMessage](hosts[0], WithProtocols(tproto))
+	min, err := New[*plainMessage](hosts[0], newPlainMessage, WithProtocols(tproto))
 	require.NoError(t, err)
 
-	mout, err := New[*PlainMessage](hosts[1], WithProtocols(tproto))
+	mout, err := New[*plainMessage](hosts[1], newPlainMessage, WithProtocols(tproto))
 	require.NoError(t, err)
 
 	err = min.Host().Connect(ctx, *host.InfoFromHost(mout.Host()))
@@ -169,14 +170,14 @@ func TestSend_Events(t *testing.T) {
 	firstSub, err := firstHst.EventBus().Subscribe(&event.EvtPeerConnectednessChanged{})
 	require.NoError(t, err)
 
-	first, err := New[*PlainMessage](mnet.Hosts()[0], WithProtocols(tproto))
+	first, err := New[*plainMessage](mnet.Hosts()[0], newPlainMessage, WithProtocols(tproto))
 	require.NoError(t, err)
 
 	secondHst := mnet.Hosts()[1]
 	secondSub, err := secondHst.EventBus().Subscribe(&event.EvtPeerConnectednessChanged{})
 	require.NoError(t, err)
 
-	second, err := New[*PlainMessage](mnet.Hosts()[1], WithProtocols(tproto))
+	second, err := New[*plainMessage](mnet.Hosts()[1], newPlainMessage, WithProtocols(tproto))
 	require.NoError(t, err)
 
 	_, err = mnet.ConnectPeers(mnet.Peers()[0], mnet.Peers()[1])
@@ -222,9 +223,9 @@ func TestGroupBroadcast(t *testing.T) {
 	require.NoError(t, err)
 
 	// create messengers according to netSize
-	ms := make([]*Messenger[*PlainMessage], netSize)
+	ms := make([]*Messenger[*plainMessage], netSize)
 	for i, h := range mnet.Hosts() {
-		ms[i], err = New[*PlainMessage](h, WithProtocols(tproto))
+		ms[i], err = New[*plainMessage](h, newPlainMessage, WithProtocols(tproto))
 		require.NoError(t, err)
 	}
 
@@ -263,9 +264,9 @@ func TestPeers(t *testing.T) {
 	require.NoError(t, err)
 
 	// create messengers according to netSize
-	ms := make([]*Messenger[*PlainMessage], netSize)
+	ms := make([]*Messenger[*plainMessage], netSize)
 	for i, h := range mnet.Hosts() {
-		ms[i], err = New[*PlainMessage](h, WithProtocols(tproto))
+		ms[i], err = New[*plainMessage](h, newPlainMessage, WithProtocols(tproto))
 		require.NoError(t, err)
 	}
 
@@ -281,10 +282,18 @@ func TestPeers(t *testing.T) {
 	}
 }
 
-func randPlainMessage(size int, to peer.ID) *PlainMessage {
-	msg := &PlainMessage{}
+type plainMessage struct {
+	serde.PlainMessage
+	MessageBase
+}
+
+var newPlainMessage NewMessageFn[*plainMessage] = func(from, to peer.ID) *plainMessage {
+	return &plainMessage{MessageBase: MessageBase{FromPeer: from, ToPeer: to}}
+}
+
+func randPlainMessage(size int, to peer.ID) *plainMessage {
+	msg := &plainMessage{MessageBase: MessageBase{ToPeer: to}}
 	msg.Data = make([]byte, size)
-	msg.to = to
 	rand.Read(msg.Data)
 	return msg
 }
