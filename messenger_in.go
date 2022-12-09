@@ -62,9 +62,8 @@ func (m *Messenger[M]) msgsIn(ctx context.Context, s inet.Stream) {
 	r := bufio.NewReader(s)
 
 	from, to := s.Conn().RemotePeer(), s.Conn().LocalPeer()
-	var tp M
 	for {
-		msg := tp.New(from, to).(M)
+		msg := m.new(from, to)
 		_, err := serde.Read(r, msg)
 		if err != nil {
 			select {

@@ -19,13 +19,14 @@ var errClosed = errors.New("msngr: closed")
 // Messenger provides a simple API to send messages to multiple peers.
 type Messenger[M Message] struct {
 	*options
-	host  host.Host
+	host host.Host
 
 	// fields below are used and protected in processIn
 	inbound       chan M
 	newStreamsIn  chan inet.Stream
 	deadStreamsIn chan inet.Stream
 	streamsIn     map[peer.ID]map[inet.Stream]context.CancelFunc
+	new           NewMessageFn[M]
 
 	// fields below are used and protected by processOut
 	outbound       chan M
@@ -45,7 +46,7 @@ type Messenger[M Message] struct {
 // New instantiates a Messenger.
 // WithProtocols option is mandatory for at least one protocol.
 // WithMessageType overrides default serde.PlainMessage.
-func New[M Message](host host.Host, opts ...Option) (*Messenger[M], error) {
+func New[M Message](host host.Host, new NewMessageFn[M], opts ...Option) (*Messenger[M], error) {
 	o, err := parseOptions(opts...)
 	if err != nil {
 		return nil, err
@@ -53,12 +54,13 @@ func New[M Message](host host.Host, opts ...Option) (*Messenger[M], error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Messenger[M]{
-		options: o,
+		options:        o,
 		host:           host,
 		inbound:        make(chan M, 32),
 		newStreamsIn:   make(chan inet.Stream, 4),
 		deadStreamsIn:  make(chan inet.Stream, 2),
 		streamsIn:      make(map[peer.ID]map[inet.Stream]context.CancelFunc),
+		new:            new,
 		outbound:       make(chan M, 32),
 		newStreamsOut:  make(chan inet.Stream, 4),
 		deadStreamsOut: make(chan inet.Stream, 2),
