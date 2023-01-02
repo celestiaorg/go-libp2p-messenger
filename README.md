@@ -11,7 +11,9 @@ purpose is to bootstrap development for new protocols and decrease boilerplate c
 * Simple non-blocking API
 * Not a protocol - sends only user's data without message wrapping on the wire
 * Not a framework - use it anyhow
-* Ready for generics
+* Integrates generics in a clean way
+* Almost zero allocations API
+* Hides away stream management(re-creation, duplicates, lifecycle)
 
 ## Background
 The libp2p provides all necessary primitives to build custom fully 
