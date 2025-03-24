@@ -70,7 +70,7 @@ func (m *Messenger[M]) reconnect(p peer.ID) {
 // and creates one stream to the peer if so.
 func (m *Messenger[M]) connected(p peer.ID) bool {
 	for _, c := range m.host.Network().ConnsToPeer(p) {
-		if c.Stat().Transient {
+		if c.Stat().Limited {
 			continue
 		}
 		log.Debugw("new peer", "id", p.ShortString())

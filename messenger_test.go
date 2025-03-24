@@ -2,6 +2,7 @@ package msngr
 
 import (
 	"context"
+	"github.com/libp2p/go-libp2p/p2p/host/eventbus"
 	"math/rand"
 	"testing"
 	"time"
@@ -301,8 +302,9 @@ func randPlainMessage(size int, to peer.ID) *plainMessage {
 func realTransportHosts(t *testing.T, n int) []host.Host {
 	out := make([]host.Host, n)
 	for i := range out {
-		netw := swarmt.GenSwarm(t)
-		h := bhost.NewBlankHost(netw)
+		bus := eventbus.NewBus()
+		netw := swarmt.GenSwarm(t, swarmt.EventBus(bus))
+		h := bhost.NewBlankHost(netw, bhost.WithEventBus(bus))
 		out[i] = h
 	}
 
