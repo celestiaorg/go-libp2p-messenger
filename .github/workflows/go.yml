@@ -6,31 +6,31 @@ on:
   pull_request:
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
-        go-version: stable
-    - name: Check out code
-      uses: actions/checkout@v2
+        go-version-file: go.mod
 
     - name: Download module dependencies
-      env: 
-         GOPROXY: "https://proxy.golang.org"
+      env:
+        GOPROXY: "https://proxy.golang.org"
       run: go mod download
 
     - name: Test
       run: go test -v -coverprofile=coverage.txt ./...
 
     - name: Upload Coverage
-      uses: codecov/codecov-action@v1
-      continue-on-error: true
+      uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
       with:
-        token: ${{secrets.CODECOV_TOKEN}}
-        file: ./coverage.txt
-        fail_ci_if_error: false
+        disable_search: true
+        fail_ci_if_error: true
+        files: ./coverage.txt
+        use_oidc: true
