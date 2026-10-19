@@ -57,6 +57,18 @@ optimizes protocols by removing unnecessary stream negotiations, which are prima
 
 See [these docs][pkg-url].
 
+## Contributing
+
+This repo follows [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/), so PR titles should start with `fix:`, `feat:`, `build:`, `chore:`, `ci:`, `docs:`, `style:`, `refactor:`, `perf:`, or `test:`. Include an `!` (e.g. `feat!:`) if the PR includes a breaking change.
+
+PR titles must start the subject with `[high]`, `[medium]`, or `[low]` to indicate the review thoroughness needed. For example: `fix!: [high] handle concurrent stream resets` or `docs: [low] clarify usage`. Include the same tag in the PR description and explain why you chose it.
+
+- `[high]`: Deep review for message framing/serialization, stream handling/concurrency, peer management, security, or other changes with significant risk.
+- `[medium]`: Standard review for code changes with limited impact and well-understood behavior.
+- `[low]`: Focused review for straightforward docs, tests, or tooling changes with low risk.
+
+Choose the higher level when unsure. A small diff can still need deep review. CI checks the title format; reviewers should confirm the chosen level.
+
 ## License
 
 [Apache-2.0](LICENSE).
