@@ -102,26 +102,25 @@ func TestReconnect(t *testing.T) {
 	err = hosts[0].Connect(ctx, *host.InfoFromHost(hosts[1]))
 	require.NoError(t, err)
 
-	// wait some time
-	time.Sleep(time.Millisecond * 100)
-
-	go func() {
-		for i := range make([]int, 10) {
-			if i == 8 {
-				err = hosts[0].Network().ClosePeer(hosts[1].ID())
-				require.NoError(t, err)
-			}
-			min.Send(ctx, randPlainMessage(256, hosts[1].ID()))
-		}
-	}()
-
-	for i := range make([]int, 9) {
-		_, err := mout.Receive(ctx)
-		if !assert.NoError(t, err) {
-			t.Log(i)
-			return
-		}
+	// deliver some messages over the first connection
+	for range 8 {
+		require.NoError(t, min.Send(ctx, randPlainMessage(256, hosts[1].ID())))
 	}
+	for range 8 {
+		_, err := mout.Receive(ctx)
+		require.NoError(t, err)
+	}
+
+	// drop the connection and check that sending more messages reconnects
+	err = hosts[0].Network().ClosePeer(hosts[1].ID())
+	require.NoError(t, err)
+
+	// the first message after the disconnect may be dropped (see NOTE in processOut)
+	for range 2 {
+		require.NoError(t, min.Send(ctx, randPlainMessage(256, hosts[1].ID())))
+	}
+	_, err = mout.Receive(ctx)
+	require.NoError(t, err)
 }
 
 func TestStreamDuplicates(t *testing.T) {
